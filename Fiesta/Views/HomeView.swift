@@ -78,10 +78,9 @@ struct HomeView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(Color("PrimaryColor"))
+                        .background(Color("FiestaPrimary"))
                         .foregroundColor(.white)
-                        .cornerRadius(15)
-                        .shadow(color: Color("PrimaryColor").opacity(0.4), radius: 5)
+                        .cornerRadius(10)
                     }
                     .padding(.horizontal)
                     

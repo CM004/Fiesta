@@ -44,7 +44,7 @@ struct MainTabView: View {
                 }
                 .tag(4)
         }
-        .accentColor(Color("PrimaryColor"))
+        .accentColor(Color("FiestaPrimary"))
     }
 }
 

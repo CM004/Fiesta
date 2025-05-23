@@ -35,13 +35,13 @@ struct ProfileView: View {
                 // App Settings
                 Section("App Settings") {
                     Toggle("Notifications", isOn: $notificationsEnabled)
-                        .tint(Color("PrimaryColor"))
+                        .tint(Color("FiestaPrimary"))
                     
                     Toggle("Location Services", isOn: $locationServicesEnabled)
-                        .tint(Color("PrimaryColor"))
+                        .tint(Color("FiestaPrimary"))
                     
                     Toggle("Dark Mode", isOn: $darkModeEnabled)
-                        .tint(Color("PrimaryColor"))
+                        .tint(Color("FiestaPrimary"))
                     
                     NavigationLink(destination: Text("Preferences Screen")) {
                         Label("Preferences", systemImage: "slider.horizontal.3")
@@ -135,7 +135,7 @@ struct ProfileHeaderView: View {
                 
                 Image(systemName: "pencil.circle.fill")
                     .font(.title)
-                    .foregroundColor(Color("PrimaryColor"))
+                    .foregroundColor(Color("FiestaPrimary"))
                     .background(Color.white)
                     .clipShape(Circle())
             }
@@ -294,7 +294,7 @@ struct EnvironmentalImpactView: View {
             }
             
             ProgressView(value: min(Double(mealsSaved) / 50.0, 1.0))
-                .tint(Color("PrimaryColor"))
+                .tint(Color("FiestaPrimary"))
                 .padding(.top, 5)
             
             Text("You're \(Int(min(Double(mealsSaved) / 50.0 * 100, 100)))% of the way to saving the equivalent of a tree!")

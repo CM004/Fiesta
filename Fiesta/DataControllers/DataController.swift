@@ -17,6 +17,9 @@ class DataController: ObservableObject {
     private let swapsStorePath = "swaps.json" 
     private let predictionsStorePath = "predictions.json"
     
+    // Keys for UserDefaults
+    private let currentUserIdKey = "com.fiesta.currentUserId"
+    
     // FileManager for data persistence
     private let fileManager = FileManager.default
     private var documentsDirectory: URL {
@@ -24,7 +27,13 @@ class DataController: ObservableObject {
     }
     
     init() {
-        loadData()
+        // Try to restore user session first
+        restoreUserSession()
+        
+        // If no user session, load regular data
+        if currentUser == nil {
+            loadData()
+        }
         
         // If no data exists, create sample data for testing
         if availableMeals.isEmpty && currentUser == nil {
@@ -37,6 +46,39 @@ class DataController: ObservableObject {
         loadData()
     }
     
+    // MARK: - User Session Management
+    
+    private func restoreUserSession() {
+        // Check if we have a saved user ID
+        if let userId = UserDefaults.standard.string(forKey: currentUserIdKey) {
+            let users = loadUsers()
+            if let savedUser = users.first(where: { $0.id == userId }) {
+                self.currentUser = savedUser
+                
+                // Load other data related to this user
+                let allMeals = loadMeals()
+                self.availableMeals = allMeals.filter { $0.status == .available }
+                self.offeredMeals = allMeals.filter { $0.status == .offered && $0.offeredBy == currentUser?.id }
+                self.claimedMeals = allMeals.filter { $0.status == .claimed && $0.claimedBy == currentUser?.id }
+                self.mealSwaps = loadMealSwaps()
+                self.predictions = loadPredictions()
+                self.leaderboard = users.sorted { $0.cqScore > $1.cqScore }
+                
+                print("Restored session for user: \(savedUser.name)")
+            }
+        }
+    }
+    
+    private func saveUserSession() {
+        if let user = currentUser {
+            UserDefaults.standard.set(user.id, forKey: currentUserIdKey)
+            print("Saved session for user: \(user.name)")
+        } else {
+            UserDefaults.standard.removeObject(forKey: currentUserIdKey)
+            print("Cleared user session")
+        }
+    }
+    
     // MARK: - User Methods
     
     func login(email: String, password: String) -> Bool {
@@ -44,6 +86,7 @@ class DataController: ObservableObject {
         // For now, just simulate login with sample data
         if let user = loadUsers().first(where: { $0.email == email }) {
             self.currentUser = user
+            saveUserSession()
             return true
         }
         return false
@@ -52,6 +95,9 @@ class DataController: ObservableObject {
     func logout() {
         // Reset user state when logging out
         self.currentUser = nil
+        
+        // Clear the saved user session
+        UserDefaults.standard.removeObject(forKey: currentUserIdKey)
         
         // Optionally clear any user-specific cached data
         self.claimedMeals = []
@@ -92,6 +138,7 @@ class DataController: ObservableObject {
         
         // Set as current user - auto login after registration
         self.currentUser = newUser
+        saveUserSession()
         
         updateLeaderboard() // Update leaderboard to include the new user
         
@@ -390,13 +437,14 @@ class DataController: ObservableObject {
             User(id: "4", name: "Admin User", email: "admin@test.com", role: .admin, cqScore: 0.0)
         ]
         
-        // Create sample meals
+        // Create sample meals - Available meals
         let sampleMeals: [Meal] = [
             Meal(id: "1", 
                  name: "Vegetable Curry with Rice", 
                  description: "A hearty vegetable curry served with steamed rice", 
                  imageURL: "curry_rice", 
                  type: .lunch, 
+                 status: .available,
                  date: Date(), 
                  location: "Main Cafeteria",
                  nutritionInfo: NutritionInfo(calories: 450, protein: 12.0, carbs: 65.0, fat: 15.0, allergens: ["Nuts"], dietaryInfo: ["Vegetarian"])),
@@ -406,6 +454,7 @@ class DataController: ObservableObject {
                  description: "Fluffy pancakes served with maple syrup and fresh berries", 
                  imageURL: "pancakes", 
                  type: .breakfast, 
+                 status: .available,
                  date: Date(), 
                  location: "Main Cafeteria",
                  nutritionInfo: NutritionInfo(calories: 550, protein: 8.0, carbs: 85.0, fat: 12.0, allergens: ["Gluten", "Dairy"], dietaryInfo: ["Vegetarian"])),
@@ -415,6 +464,7 @@ class DataController: ObservableObject {
                  description: "Grilled chicken breast with lettuce, tomato and mayo in a whole wheat bun", 
                  imageURL: "chicken_sandwich", 
                  type: .lunch, 
+                 status: .available,
                  date: Calendar.current.date(byAdding: .day, value: 1, to: Date())!, 
                  location: "Main Cafeteria",
                  nutritionInfo: NutritionInfo(calories: 420, protein: 28.0, carbs: 45.0, fat: 12.0, allergens: ["Gluten"], dietaryInfo: [])),
@@ -424,6 +474,7 @@ class DataController: ObservableObject {
                  description: "Penne pasta with homemade tomato sauce and parmesan cheese", 
                  imageURL: "pasta", 
                  type: .dinner, 
+                 status: .available,
                  date: Date(), 
                  location: "Main Cafeteria",
                  nutritionInfo: NutritionInfo(calories: 580, protein: 18.0, carbs: 90.0, fat: 10.0, allergens: ["Gluten", "Dairy"], dietaryInfo: ["Vegetarian"])),
@@ -433,10 +484,71 @@ class DataController: ObservableObject {
                  description: "Fresh seasonal fruits with a honey-lime dressing", 
                  imageURL: "fruit_salad", 
                  type: .snack, 
+                 status: .available,
                  date: Date(), 
                  location: "Snack Corner",
                  nutritionInfo: NutritionInfo(calories: 120, protein: 2.0, carbs: 28.0, fat: 0.5, allergens: [], dietaryInfo: ["Vegan", "Vegetarian"]))
         ]
+        
+        // Create sample offered meals (ready to be claimed)
+        let sampleOfferedMeals: [Meal] = [
+            Meal(id: "6", 
+                 name: "Caesar Salad", 
+                 description: "Fresh romaine lettuce with grilled chicken, croutons, and caesar dressing", 
+                 imageURL: "caesar_salad", 
+                 type: .lunch, 
+                 status: .offered,
+                 date: Date(), 
+                 location: "East Wing Cafe",
+                 nutritionInfo: NutritionInfo(calories: 320, protein: 22.0, carbs: 15.0, fat: 18.0, allergens: ["Gluten", "Dairy"], dietaryInfo: []),
+                 offeredBy: "2", // Offered by Student Two
+                 offerExpiryTime: Date().addingTimeInterval(3600)), // 1 hour from now
+            
+            Meal(id: "7", 
+                 name: "Vegetable Soup", 
+                 description: "Hearty vegetable soup with fresh bread roll", 
+                 imageURL: "vegetable_soup", 
+                 type: .lunch, 
+                 status: .offered,
+                 date: Date(), 
+                 location: "Main Cafeteria",
+                 nutritionInfo: NutritionInfo(calories: 220, protein: 8.0, carbs: 35.0, fat: 5.0, allergens: ["Celery"], dietaryInfo: ["Vegetarian"]),
+                 offeredBy: "2", // Offered by Student Two
+                 offerExpiryTime: Date().addingTimeInterval(2700)), // 45 minutes from now
+            
+            Meal(id: "8", 
+                 name: "Chocolate Brownie", 
+                 description: "Rich chocolate brownie with walnuts", 
+                 imageURL: "brownie", 
+                 type: .snack, 
+                 status: .offered,
+                 date: Date(), 
+                 location: "Snack Corner",
+                 nutritionInfo: NutritionInfo(calories: 280, protein: 4.0, carbs: 32.0, fat: 16.0, allergens: ["Gluten", "Dairy", "Nuts"], dietaryInfo: ["Vegetarian"]),
+                 offeredBy: "2", // Offered by Student Two
+                 offerExpiryTime: Date().addingTimeInterval(1800)) // 30 minutes from now
+        ]
+        
+        // Add some claimed meals for sample history
+        let sampleClaimedMeals: [Meal] = [
+            Meal(id: "9", 
+                 name: "Quinoa Bowl", 
+                 description: "Quinoa with roasted vegetables and tahini dressing", 
+                 imageURL: "quinoa_bowl", 
+                 type: .lunch, 
+                 status: .claimed,
+                 date: Calendar.current.date(byAdding: .day, value: -1, to: Date())!, 
+                 location: "Main Cafeteria",
+                 nutritionInfo: NutritionInfo(calories: 380, protein: 12.0, carbs: 58.0, fat: 10.0, allergens: ["Sesame"], dietaryInfo: ["Vegan", "Vegetarian", "Gluten-Free"]),
+                 offeredBy: "2",
+                 claimedBy: "1",
+                 claimDeadlineTime: Calendar.current.date(byAdding: .minute, value: 30, to: Date())!)
+        ]
+        
+        // Combine all meal types
+        var allMeals = sampleMeals
+        allMeals.append(contentsOf: sampleOfferedMeals)
+        allMeals.append(contentsOf: sampleClaimedMeals)
         
         // Create sample predictions
         let samplePredictions: [MealPrediction] = [
@@ -477,10 +589,43 @@ class DataController: ObservableObject {
             )
         ]
         
+        // Create sample swaps
+        let sampleSwaps: [MealSwap] = [
+            MealSwap(
+                id: "swap1",
+                mealId: "6",
+                offeredBy: "2",
+                expiresAt: Date().addingTimeInterval(3600)
+            ),
+            MealSwap(
+                id: "swap2",
+                mealId: "7",
+                offeredBy: "2",
+                expiresAt: Date().addingTimeInterval(2700)
+            ),
+            MealSwap(
+                id: "swap3",
+                mealId: "8",
+                offeredBy: "2",
+                expiresAt: Date().addingTimeInterval(1800)
+            ),
+            MealSwap(
+                id: "swap4",
+                mealId: "9",
+                offeredBy: "2",
+                claimedBy: "1",
+                claimedAt: Calendar.current.date(byAdding: .minute, value: -15, to: Date())!,
+                expiresAt: Calendar.current.date(byAdding: .hour, value: 1, to: Date())!,
+                status: .completed,
+                cqPointsEarned: 1.5
+            )
+        ]
+        
         // Save sample data
         saveUsers(sampleUsers)
-        saveMeals(sampleMeals)
+        saveMeals(allMeals)
         savePredictions(samplePredictions)
+        saveMealSwaps(sampleSwaps)
         
         // Set the first user as the current user
         self.currentUser = sampleUsers[0]

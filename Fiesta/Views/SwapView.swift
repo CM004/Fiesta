@@ -1,5 +1,8 @@
 import SwiftUI
 
+// Import utilities
+import Foundation
+
 struct SwapView: View {
     @Environment(\.presentationMode) var presentationMode
     @EnvironmentObject private var dataController: DataController
@@ -35,7 +38,7 @@ struct SwapView: View {
                             .fontWeight(swipeAction == .offer ? .bold : .medium)
                             .padding(.vertical, 10)
                             .padding(.horizontal, 20)
-                            .background(swipeAction == .offer ? Color("PrimaryColor") : Color.gray.opacity(0.1))
+                            .background(swipeAction == .offer ? Color("FiestaPrimary") : Color.gray.opacity(0.1))
                             .foregroundColor(swipeAction == .offer ? .white : .primary)
                             .cornerRadius(20)
                     }
@@ -48,7 +51,7 @@ struct SwapView: View {
                             .fontWeight(swipeAction == .claim ? .bold : .medium)
                             .padding(.vertical, 10)
                             .padding(.horizontal, 20)
-                            .background(swipeAction == .claim ? Color("PrimaryColor") : Color.gray.opacity(0.1))
+                            .background(swipeAction == .claim ? Color("FiestaPrimary") : Color.gray.opacity(0.1))
                             .foregroundColor(swipeAction == .claim ? .white : .primary)
                             .cornerRadius(20)
                     }
@@ -74,7 +77,7 @@ struct SwapView: View {
                                 Text("Refresh")
                                     .fontWeight(.medium)
                                     .padding()
-                                    .background(Color("PrimaryColor"))
+                                    .background(Color("FiestaPrimary"))
                                     .foregroundColor(.white)
                                     .cornerRadius(10)
                             }
@@ -233,12 +236,101 @@ struct SwapView: View {
             meals = dataController.availableMeals.filter {
                 $0.status == .offered && 
                 $0.offeredBy != dataController.currentUser?.id && 
-                ($0.claimDeadlineTime == nil || $0.claimDeadlineTime! > Date())
+                ($0.offerExpiryTime == nil || $0.offerExpiryTime! > Date())
+            }
+            
+            // Force reload from data source if no meals are found 
+            // (in case the DataController cached values need refreshing)
+            if meals.isEmpty {
+                dataController.refreshData()
+                meals = dataController.availableMeals.filter {
+                    $0.status == .offered && 
+                    $0.offeredBy != dataController.currentUser?.id && 
+                    ($0.offerExpiryTime == nil || $0.offerExpiryTime! > Date())
+                }
+                
+                // If still empty after refresh, display an informative message
+                if meals.isEmpty {
+                    print("No claimable meals found after data refresh")
+                    
+                    // For demo purposes, create some sample meals to claim if none exist
+                    if swipeAction == .claim {
+                        createSampleOfferedMeals()
+                        meals = dataController.availableMeals.filter {
+                            $0.status == .offered && 
+                            $0.offeredBy != dataController.currentUser?.id && 
+                            ($0.offerExpiryTime == nil || $0.offerExpiryTime! > Date())
+                        }
+                    }
+                }
             }
         }
         
+        print("Loaded \(meals.count) meals for \(swipeAction == .offer ? "offering" : "claiming")")
         currentIndex = 0
         translation = .zero
+    }
+    
+    // For demo purposes only - creates sample meals that can be claimed
+    private func createSampleOfferedMeals() {
+        // Only create sample meals if we're in claim mode and no meals are available
+        guard swipeAction == .claim && meals.isEmpty else { return }
+        
+        // Sample offered meals
+        let sampleOfferedMeals: [Meal] = [
+            Meal(id: "sample1", 
+                 name: "Chicken Caesar Wrap", 
+                 description: "Fresh romaine lettuce with grilled chicken in a whole wheat wrap", 
+                 imageURL: "caesar_salad", 
+                 type: .lunch, 
+                 status: .offered,
+                 date: Date(), 
+                 location: "East Wing Cafe",
+                 nutritionInfo: NutritionInfo(calories: 380, protein: 25.0, carbs: 35.0, fat: 12.0, allergens: ["Gluten", "Dairy"], dietaryInfo: []),
+                 offeredBy: "2", // Offered by someone else
+                 offerExpiryTime: Date().addingTimeInterval(3600)), // 1 hour from now
+            
+            Meal(id: "sample2", 
+                 name: "Vegetable Stir Fry", 
+                 description: "Mixed vegetables stir-fried with tofu and teriyaki sauce", 
+                 imageURL: "vegetable_soup", 
+                 type: .dinner, 
+                 status: .offered,
+                 date: Date(), 
+                 location: "Main Cafeteria",
+                 nutritionInfo: NutritionInfo(calories: 320, protein: 15.0, carbs: 45.0, fat: 8.0, allergens: ["Soy"], dietaryInfo: ["Vegetarian"]),
+                 offeredBy: "2", // Offered by someone else
+                 offerExpiryTime: Date().addingTimeInterval(2700)), // 45 minutes from now
+            
+            Meal(id: "sample3", 
+                 name: "Fruit Parfait", 
+                 description: "Yogurt with fresh berries and granola", 
+                 imageURL: "fruit_salad", 
+                 type: .snack, 
+                 status: .offered,
+                 date: Date(), 
+                 location: "Snack Corner",
+                 nutritionInfo: NutritionInfo(calories: 250, protein: 10.0, carbs: 40.0, fat: 6.0, allergens: ["Dairy", "Nuts"], dietaryInfo: ["Vegetarian"]),
+                 offeredBy: "2", // Offered by someone else
+                 offerExpiryTime: Date().addingTimeInterval(1800)) // 30 minutes from now
+        ]
+        
+        // Add these meals to the data controller
+        for meal in sampleOfferedMeals {
+            dataController.updateMeal(meal)
+        }
+        
+        // Create swap records for these meals
+        for meal in sampleOfferedMeals {
+            let swap = MealSwap(
+                mealId: meal.id,
+                offeredBy: meal.offeredBy!,
+                expiresAt: meal.offerExpiryTime ?? Date().addingTimeInterval(3600)
+            )
+            dataController.saveMealSwap(swap)
+        }
+        
+        print("Created \(sampleOfferedMeals.count) sample meals for claiming")
     }
     
     private func handleSwipe(with gesture: DragGesture.Value, meal: Meal) {
@@ -541,6 +633,45 @@ struct ClaimSuccessView: View {
                 .background(Color.gray.opacity(0.1))
                 .cornerRadius(12)
                 
+                // Environmental Impact
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Environmental Impact")
+                        .font(.headline)
+                    
+                    Text("By claiming this meal, you've helped save:")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                    
+                    // Calculate environmental impact of one meal
+                    let impact = EnvironmentalImpactCalculator.calculateTotalImpact(mealCount: 1)
+                    
+                    HStack(spacing: 20) {
+                        EnvironmentalImpactItem(
+                            icon: "leaf.fill",
+                            value: EnvironmentalImpactCalculator.formatImpact(type: "co2", value: impact["co2"] ?? 0),
+                            label: "CO₂ Emissions",
+                            color: .green
+                        )
+                        
+                        EnvironmentalImpactItem(
+                            icon: "drop.fill",
+                            value: EnvironmentalImpactCalculator.formatImpact(type: "water", value: impact["water"] ?? 0),
+                            label: "Water",
+                            color: .blue
+                        )
+                        
+                        EnvironmentalImpactItem(
+                            icon: "bolt.fill",
+                            value: EnvironmentalImpactCalculator.formatImpact(type: "energy", value: impact["energy"] ?? 0),
+                            label: "Energy",
+                            color: .orange
+                        )
+                    }
+                }
+                .padding()
+                .background(Color.gray.opacity(0.1))
+                .cornerRadius(12)
+                
                 // QR Code for pickup verification
                 Image(systemName: "qrcode")
                     .font(.system(size: 150))
@@ -563,9 +694,9 @@ struct ClaimSuccessView: View {
                     .foregroundColor(.white)
                     .padding()
                     .frame(maxWidth: .infinity)
-                    .background(Color("PrimaryColor"))
+                    .background(Color("FiestaPrimary"))
                     .cornerRadius(15)
-                    .shadow(color: Color("PrimaryColor").opacity(0.4), radius: 5)
+                    .shadow(color: Color("FiestaPrimary").opacity(0.4), radius: 5)
             }
             .padding(.top)
         }
@@ -578,6 +709,31 @@ struct ClaimSuccessView: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "h:mm a"
         return formatter.string(from: date)
+    }
+}
+
+struct EnvironmentalImpactItem: View {
+    let icon: String
+    let value: String
+    let label: String
+    let color: Color
+    
+    var body: some View {
+        VStack {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundColor(color)
+            
+            Text(value)
+                .font(.headline)
+                .fontWeight(.bold)
+            
+            Text(label)
+                .font(.caption)
+                .foregroundColor(.gray)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 

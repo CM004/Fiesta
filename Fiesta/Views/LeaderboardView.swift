@@ -21,7 +21,7 @@ struct LeaderboardView: View {
                                 .padding(.horizontal, 12)
                                 .background(
                                     selectedPeriod == period ? 
-                                        Color("PrimaryColor") : 
+                                        Color("FiestaPrimary") : 
                                         Color.gray.opacity(0.1)
                                 )
                                 .foregroundColor(selectedPeriod == period ? .white : .primary)
@@ -98,7 +98,8 @@ struct TopRankView: View {
                         .fill(
                             rank == 1 ? Color.yellow :
                             rank == 2 ? Color.gray :
-                            Color.brown
+                            rank == 3 ? Color.brown :
+                            Color("FiestaPrimary")
                         )
                         .frame(width: 90, height: 90)
                     
@@ -132,7 +133,8 @@ struct TopRankView: View {
                         .fill(
                             rank == 1 ? Color.yellow :
                             rank == 2 ? Color.gray :
-                            Color.brown
+                            rank == 3 ? Color.brown :
+                            Color("FiestaPrimary")
                         )
                         .frame(width: 30, height: 30)
                     
@@ -184,7 +186,8 @@ struct TopRankView: View {
                 .shadow(color: 
                         rank == 1 ? Color.yellow.opacity(0.3) :
                         rank == 2 ? Color.gray.opacity(0.3) :
-                        Color.brown.opacity(0.3), 
+                        rank == 3 ? Color.brown.opacity(0.3) :
+                        Color.black.opacity(0.3), 
                        radius: 10)
         )
         .padding(.horizontal)
@@ -298,7 +301,7 @@ struct PersonalRankView: View {
                 Text("\(Int(user.cqScore))")
                     .font(.title)
                     .fontWeight(.bold)
-                    .foregroundColor(Color("PrimaryColor"))
+                    .foregroundColor(Color("FiestaPrimary"))
             }
         }
         .padding()

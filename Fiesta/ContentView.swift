@@ -9,37 +9,72 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var dataController = DataController()
-    @State private var isAuthenticated = false
+    @State private var isAuthenticated: Bool = false
     @State private var email = ""
     @State private var password = ""
     @State private var showingError = false
     @State private var errorMessage = ""
     
     var body: some View {
-        if isAuthenticated {
-            // Main app interface
-            MainTabView()
-                .environmentObject(dataController)
-                .onAppear {
-                    // Set up notification observer for logout
-                    NotificationCenter.default.addObserver(
-                        forName: Notification.Name("LogoutUser"),
-                        object: nil,
-                        queue: .main) { _ in
-                            isAuthenticated = false
+        Group {
+            if isAuthenticated || dataController.currentUser != nil {
+                // Main app interface
+                MainTabView()
+                    .environmentObject(dataController)
+                    .onAppear {
+                        // Set up notification observer for logout
+                        setupLogoutObserver()
                     }
-                }
-        } else {
-            // Login view
-            LoginView(
-                isAuthenticated: $isAuthenticated,
-                email: $email,
-                password: $password,
-                showingError: $showingError,
-                errorMessage: $errorMessage,
-                login: handleLogin
-            )
-            .environmentObject(dataController)
+            } else {
+                // Login view
+                LoginView(
+                    isAuthenticated: $isAuthenticated,
+                    email: $email,
+                    password: $password,
+                    showingError: $showingError,
+                    errorMessage: $errorMessage,
+                    login: handleLogin
+                )
+                .environmentObject(dataController)
+            }
+        }
+        .onAppear {
+            // Debug info about session state
+            if let user = dataController.currentUser {
+                print("Session restored for: \(user.name) (\(user.email))")
+                isAuthenticated = true
+            } else {
+                print("No active session found")
+            }
+            
+            // Set up notification observer for logout
+            setupLogoutObserver()
+        }
+    }
+    
+    private func setupLogoutObserver() {
+        // Remove any existing observers to avoid duplicates
+        NotificationCenter.default.removeObserver(self)
+        
+        // Add observer for logout notifications
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("LogoutUser"),
+            object: nil,
+            queue: .main) { _ in
+                handleLogout()
+            }
+    }
+    
+    private func handleLogout() {
+        // Clear the authentication state
+        isAuthenticated = false
+        
+        // Force UI refresh
+        DispatchQueue.main.async {
+            // This is a backup - dataController already cleared the user
+            if dataController.currentUser != nil {
+                dataController.logout()
+            }
         }
     }
     
@@ -75,7 +110,7 @@ struct LoginView: View {
                             .resizable()
                             .aspectRatio(contentMode: .fit)
                             .frame(width: 100, height: 100)
-                            .foregroundColor(Color("PrimaryColor"))
+                            .foregroundColor(Color("FiestaPrimary"))
                         
                         Text("Fiesta")
                             .font(.largeTitle)
@@ -109,7 +144,7 @@ struct LoginView: View {
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)
                                 .padding()
-                                .background(Color("PrimaryColor"))
+                                .background(Color("FiestaPrimary"))
                                 .cornerRadius(10)
                         }
                         
@@ -121,7 +156,7 @@ struct LoginView: View {
                         }) {
                             Text("Use Demo Account")
                                 .fontWeight(.medium)
-                                .foregroundColor(Color("PrimaryColor"))
+                                .foregroundColor(Color("FiestaPrimary"))
                         }
                         
                         HStack {
@@ -132,7 +167,7 @@ struct LoginView: View {
                             }) {
                                 Text("Forgot Password?")
                                     .fontWeight(.medium)
-                                    .foregroundColor(Color("PrimaryColor"))
+                                    .foregroundColor(Color("FiestaPrimary"))
                             }
                         }
                     }
@@ -154,7 +189,7 @@ struct LoginView: View {
                             }) {
                                 Text("Sign Up")
                                     .fontWeight(.semibold)
-                                    .foregroundColor(Color("PrimaryColor"))
+                                    .foregroundColor(Color("FiestaPrimary"))
                             }
                         }
                     }
@@ -238,7 +273,7 @@ struct SignupView: View {
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(Color("PrimaryColor"))
+                            .background(Color("FiestaPrimary"))
                             .cornerRadius(10)
                     }
                     .padding(.top)
@@ -253,7 +288,7 @@ struct SignupView: View {
                         Image(systemName: "arrow.left")
                         Text("Back to Login")
                     }
-                    .foregroundColor(Color("PrimaryColor"))
+                    .foregroundColor(Color("FiestaPrimary"))
                 }
                 .padding(.top)
                 
