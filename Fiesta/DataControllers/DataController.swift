@@ -358,9 +358,134 @@ class DataController: ObservableObject {
     
     private func refreshMealLists() {
         let allMeals = loadMeals()
-        self.availableMeals = allMeals.filter { $0.status == .available }
-        self.offeredMeals = allMeals.filter { $0.status == .offered && $0.offeredBy == currentUser?.id }
-        self.claimedMeals = allMeals.filter { $0.status == .claimed && $0.claimedBy == currentUser?.id }
+        
+        // Check if there are any meals for today
+        let hasTodayMeals = allMeals.contains { Calendar.current.isDateInToday($0.date) }
+        let hasUpcomingMeals = allMeals.contains { 
+            let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+            return Calendar.current.isDate($0.date, inSameDayAs: tomorrow) 
+        }
+        
+        // If no meals for today or upcoming, create sample meals
+        if !hasTodayMeals || !hasUpcomingMeals {
+            createSampleMealsForCurrentPeriod()
+        }
+        
+        // Refresh the lists with potentially updated meals
+        let updatedMeals = loadMeals()
+        self.availableMeals = updatedMeals.filter { $0.status == .available }
+        self.offeredMeals = updatedMeals.filter { $0.status == .offered && $0.offeredBy == currentUser?.id }
+        self.claimedMeals = updatedMeals.filter { $0.status == .claimed && $0.claimedBy == currentUser?.id }
+    }
+    
+    // Create sample meals for current day if none exist
+    private func createSampleMealsForCurrentPeriod() {
+        print("Creating sample meals for current period")
+        
+        // Today's meals
+        let todayMeals: [Meal] = [
+            Meal(id: "today1", 
+                 name: "Vegetable Curry with Rice", 
+                 description: "A hearty vegetable curry served with steamed rice", 
+                 imageURL: "curry_rice", 
+                 type: .lunch, 
+                 status: .available,
+                 date: Date(), 
+                 location: "Main Cafeteria",
+                 nutritionInfo: NutritionInfo(calories: 450, protein: 12.0, carbs: 65.0, fat: 15.0, allergens: ["Nuts"], dietaryInfo: ["Vegetarian"])),
+            
+            Meal(id: "today2", 
+                 name: "Pasta with Tomato Sauce", 
+                 description: "Penne pasta with homemade tomato sauce and parmesan cheese", 
+                 imageURL: "pasta", 
+                 type: .dinner, 
+                 status: .available,
+                 date: Date(), 
+                 location: "Main Cafeteria",
+                 nutritionInfo: NutritionInfo(calories: 580, protein: 18.0, carbs: 90.0, fat: 10.0, allergens: ["Gluten", "Dairy"], dietaryInfo: ["Vegetarian"]))
+        ]
+        
+        // Tomorrow's meals
+        let tomorrowDate = Calendar.current.date(byAdding: .day, value: 1, to: Date())!
+        let upcomingMeals: [Meal] = [
+            Meal(id: "upcoming1", 
+                 name: "Grilled Chicken Sandwich", 
+                 description: "Grilled chicken breast with lettuce, tomato and mayo in a whole wheat bun", 
+                 imageURL: "chicken_sandwich", 
+                 type: .lunch, 
+                 status: .available,
+                 date: tomorrowDate, 
+                 location: "Main Cafeteria",
+                 nutritionInfo: NutritionInfo(calories: 420, protein: 28.0, carbs: 45.0, fat: 12.0, allergens: ["Gluten"], dietaryInfo: []))
+        ]
+        
+        // Offered meals (for swap tab)
+        let offeredMeals: [Meal] = [
+            Meal(id: "offered1", 
+                 name: "Caesar Salad", 
+                 description: "Fresh romaine lettuce with grilled chicken, croutons, and caesar dressing", 
+                 imageURL: "caesar_salad", 
+                 type: .lunch, 
+                 status: .offered,
+                 date: Date(), 
+                 location: "East Wing Cafe",
+                 nutritionInfo: NutritionInfo(calories: 320, protein: 22.0, carbs: 15.0, fat: 18.0, allergens: ["Gluten", "Dairy"], dietaryInfo: []),
+                 offeredBy: "2", // Offered by another user
+                 offerExpiryTime: Date().addingTimeInterval(3600)), // 1 hour from now
+            
+            Meal(id: "offered2", 
+                 name: "Vegetable Soup", 
+                 description: "Hearty vegetable soup with fresh bread roll", 
+                 imageURL: "vegetable_soup", 
+                 type: .lunch, 
+                 status: .offered,
+                 date: Date(), 
+                 location: "Main Cafeteria",
+                 nutritionInfo: NutritionInfo(calories: 220, protein: 8.0, carbs: 35.0, fat: 5.0, allergens: ["Celery"], dietaryInfo: ["Vegetarian"]),
+                 offeredBy: "2", // Offered by another user
+                 offerExpiryTime: Date().addingTimeInterval(2700)) // 45 minutes from now
+        ]
+        
+        // Swaps for the offered meals
+        let newSwaps: [MealSwap] = [
+            MealSwap(
+                id: "newswap1",
+                mealId: "offered1",
+                offeredBy: "2",
+                expiresAt: Date().addingTimeInterval(3600)
+            ),
+            MealSwap(
+                id: "newswap2",
+                mealId: "offered2",
+                offeredBy: "2",
+                expiresAt: Date().addingTimeInterval(2700)
+            )
+        ]
+        
+        // Get existing meals and add the new ones
+        var existingMeals = loadMeals()
+        var existingSwaps = loadMealSwaps()
+        
+        // Remove any conflicting IDs (prevent duplicates)
+        existingMeals.removeAll { meal in
+            todayMeals.contains { $0.id == meal.id } || 
+            upcomingMeals.contains { $0.id == meal.id } || 
+            offeredMeals.contains { $0.id == meal.id }
+        }
+        
+        existingSwaps.removeAll { swap in
+            newSwaps.contains { $0.id == swap.id }
+        }
+        
+        // Add the new meals and swaps
+        existingMeals.append(contentsOf: todayMeals)
+        existingMeals.append(contentsOf: upcomingMeals)
+        existingMeals.append(contentsOf: offeredMeals)
+        existingSwaps.append(contentsOf: newSwaps)
+        
+        // Save the updated data
+        saveMeals(existingMeals)
+        saveMealSwaps(existingSwaps)
     }
     
     // MARK: - File Operations

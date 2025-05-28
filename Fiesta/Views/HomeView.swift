@@ -149,6 +149,10 @@ struct HomeView: View {
                     .environmentObject(dataController)
             }
         }
+        .onAppear {
+            // Refresh data when view appears
+            dataController.refreshData()
+        }
     }
 }
 
@@ -318,6 +322,7 @@ struct StatsCardView: View {
 
 struct ClaimedMealView: View {
     let meal: Meal
+    @State private var showingClaimDetails = false
     
     var body: some View {
         HStack {
@@ -356,17 +361,24 @@ struct ClaimedMealView: View {
             Spacer()
             
             Button(action: {
-                // Navigate to claim details or QR code
+                showingClaimDetails = true
             }) {
                 Text("View")
-                    .foregroundColor(.blue)
+                    .foregroundColor(.white)
                     .fontWeight(.medium)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Color("FiestaPrimary"))
+                    .cornerRadius(8)
             }
         }
         .padding()
         .background(Color(.systemBackground))
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.1), radius: 5)
+        .sheet(isPresented: $showingClaimDetails) {
+            ClaimDetailsView(meal: meal)
+        }
     }
     
     private func timeUntilPickup(_ meal: Meal) -> String {
@@ -387,6 +399,130 @@ struct ClaimedMealView: View {
             let mins = minutes % 60
             return "\(hours)h \(mins)m"
         }
+    }
+}
+
+struct ClaimDetailsView: View {
+    @Environment(\.presentationMode) var presentationMode
+    let meal: Meal
+    
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                // Header with image
+                if let imageURL = meal.imageURL {
+                    Image(imageURL)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(height: 200)
+                        .clipped()
+                        .cornerRadius(12)
+                } else {
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.3))
+                        .frame(height: 200)
+                        .overlay(
+                            Image(systemName: "fork.knife")
+                                .font(.system(size: 50))
+                                .foregroundColor(.gray)
+                        )
+                        .cornerRadius(12)
+                }
+                
+                // Meal name and description
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(meal.name)
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    Text(meal.description)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    
+                    Divider()
+                        .padding(.vertical, 8)
+                    
+                    // Pickup details
+                    Text("Pickup Details")
+                        .font(.headline)
+                        .padding(.bottom, 4)
+                    
+                    HStack {
+                        Image(systemName: "mappin.circle.fill")
+                            .foregroundColor(.red)
+                        Text(meal.location)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.bottom, 2)
+                    
+                    HStack {
+                        Image(systemName: "clock.fill")
+                            .foregroundColor(.blue)
+                        Text("Pickup by \(formatPickupTime(meal.claimDeadlineTime))")
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Divider()
+                        .padding(.vertical, 8)
+                    
+                    // QR Code for pickup
+                    VStack(alignment: .center, spacing: 12) {
+                        Text("Show this code when collecting your meal")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                        
+                        Image(systemName: "qrcode")
+                            .font(.system(size: 150))
+                            .padding()
+                            .background(Color.white)
+                            .cornerRadius(12)
+                            .shadow(color: Color.black.opacity(0.1), radius: 5)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                }
+                .padding()
+                .background(Color(.systemBackground))
+                .cornerRadius(12)
+                .shadow(color: Color.black.opacity(0.05), radius: 5)
+                .padding(.horizontal)
+                
+                // Done button
+                Button(action: {
+                    presentationMode.wrappedValue.dismiss()
+                }) {
+                    Text("Done")
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color("FiestaPrimary"))
+                        .cornerRadius(10)
+                }
+                .padding()
+            }
+        }
+        .navigationTitle("Claimed Meal")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button(action: {
+                    presentationMode.wrappedValue.dismiss()
+                }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.gray)
+                }
+            }
+        }
+    }
+    
+    private func formatPickupTime(_ date: Date?) -> String {
+        guard let date = date else { return "Unknown" }
+        
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        return formatter.string(from: date)
     }
 }
 

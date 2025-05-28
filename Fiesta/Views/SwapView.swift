@@ -14,6 +14,8 @@ struct SwapView: View {
     @State private var swipeAction: SwipeAction?
     @State private var meals: [Meal] = []
     @State private var showingClaimSuccess = false
+    @State private var offerSuccess = false
+    @State private var loadingMeals = false
     
     enum SwipeStatus {
         case liked
@@ -59,8 +61,19 @@ struct SwapView: View {
                 .padding()
                 
                 ZStack {
+                    // Loading state
+                    if loadingMeals {
+                        VStack(spacing: 15) {
+                            ProgressView()
+                                .scaleEffect(1.5)
+                            
+                            Text("Loading meals...")
+                                .font(.headline)
+                                .foregroundColor(.gray)
+                        }
+                    }
                     // Empty state
-                    if meals.isEmpty {
+                    else if meals.isEmpty {
                         VStack(spacing: 20) {
                             Image(systemName: "fork.knife.circle")
                                 .font(.system(size: 70))
@@ -86,61 +99,75 @@ struct SwapView: View {
                         .padding()
                     } else {
                         // Stack of meal cards
-                        ForEach(meals.indices.reversed(), id: \.self) { index in
-                            SwipeMealCardView(
-                                meal: meals[index],
-                                isTop: index == currentIndex,
-                                swipeAction: swipeAction ?? .offer,
-                                translation: index == currentIndex ? translation : .zero
-                            )
-                            .animation(.spring(), value: translation)
-                            .gesture(
-                                DragGesture()
-                                    .onChanged { value in
-                                        if index == currentIndex {
-                                            translation = value.translation
-                                        }
-                                    }
-                                    .onEnded { value in
-                                        if index == currentIndex {
-                                            handleSwipe(with: value, meal: meals[index])
-                                        }
-                                    }
-                            )
-                            .position(x: UIScreen.main.bounds.width / 2, y: UIScreen.main.bounds.height / 3)
-                            .offset(y: index == currentIndex ? 0 : 20)
-                            .scaleEffect(index == currentIndex ? 1.0 : 0.95)
-                            .opacity(index == currentIndex ? 1.0 : 0.7)
-                            .zIndex(Double(meals.count - index))
+                        GeometryReader { geometry in
+                            ZStack {
+                                ForEach(meals.indices.reversed(), id: \.self) { index in
+                                    let isTop = index == currentIndex
+                                    let opacity = getCardOpacity(for: index, currentIndex: currentIndex, total: meals.count)
+                                    let scale = getCardScale(for: index, currentIndex: currentIndex)
+                                    let yOffset = getCardOffset(for: index, currentIndex: currentIndex)
+                                    
+                                    SwipeMealCardView(
+                                        meal: meals[index],
+                                        isTop: isTop,
+                                        swipeAction: swipeAction ?? .offer,
+                                        translation: isTop ? translation : .zero
+                                    )
+                                    .animation(.spring(response: 0.4, dampingFraction: 0.7), value: translation)
+                                    .gesture(
+                                        DragGesture()
+                                            .onChanged { value in
+                                                if isTop {
+                                                    translation = value.translation
+                                                }
+                                            }
+                                            .onEnded { value in
+                                                if isTop {
+                                                    handleSwipe(with: value, meal: meals[index])
+                                                }
+                                            }
+                                    )
+                                    .frame(width: geometry.size.width, height: geometry.size.height)
+                                    .scaleEffect(scale)
+                                    .offset(y: yOffset)
+                                    .opacity(opacity)
+                                    .zIndex(Double(meals.count - index))
+                                    .accessibility(hidden: !isTop)
+                                }
+                            }
+                            .frame(width: geometry.size.width, height: geometry.size.height)
                         }
+                        .frame(height: 500)
+                        .padding(.horizontal)
                     }
                     
                     // Action buttons at the bottom
                     VStack {
                         Spacer()
                         
-                        if !meals.isEmpty {
-                            HStack(spacing: 30) {
+                        if !meals.isEmpty && !loadingMeals {
+                            HStack(spacing: 40) {
                                 Button(action: {
                                     if currentIndex < meals.count {
                                         swipeStatus = .disliked
-                                        withAnimation {
+                                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                                             translation = CGSize(width: -500, height: 0)
                                         }
                                         handleReject(meals[currentIndex])
                                     }
                                 }) {
                                     Image(systemName: "xmark")
-                                        .font(.system(size: 25))
+                                        .font(.system(size: 30))
                                         .foregroundColor(.white)
-                                        .padding()
+                                        .padding(20)
                                         .background(Circle().fill(Color.red))
+                                        .shadow(radius: 5)
                                 }
                                 
                                 Button(action: {
                                     if currentIndex < meals.count {
                                         swipeStatus = .liked
-                                        withAnimation {
+                                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                                             translation = CGSize(width: 500, height: 0)
                                         }
                                         
@@ -149,13 +176,14 @@ struct SwapView: View {
                                     }
                                 }) {
                                     Image(systemName: "checkmark")
-                                        .font(.system(size: 25))
+                                        .font(.system(size: 30))
                                         .foregroundColor(.white)
-                                        .padding()
+                                        .padding(20)
                                         .background(Circle().fill(Color.green))
+                                        .shadow(radius: 5)
                                 }
                             }
-                            .padding(.bottom, 30)
+                            .padding(.bottom, 40)
                         }
                     }
                 }
@@ -169,16 +197,17 @@ struct SwapView: View {
                                 if swipeAction == .offer {
                                     // Offer meal logic
                                     if dataController.offerMeal(meal) {
+                                        offerSuccess = true
                                         handleSuccess()
                                     }
                                 } else {
                                     // Claim meal logic
                                     if dataController.claimMeal(meal) {
                                         showingClaimSuccess = true
+                                        handleSuccess()
                                     }
                                 }
                             }
-                            nextCard()
                         },
                         secondaryButton: .cancel {
                             // Reset the card position
@@ -222,39 +251,91 @@ struct SwapView: View {
             }
             loadMeals()
         }
+        .overlay(
+            offerSuccess ? OfferSuccessOverlay(isShowing: $offerSuccess) : nil
+        )
+    }
+    
+    // Card stacking effect helpers
+    private func getCardScale(for index: Int, currentIndex: Int) -> CGFloat {
+        let difference = index - currentIndex
+        if difference <= 0 {
+            return 1.0
+        } else if difference == 1 {
+            return 0.95
+        } else if difference == 2 {
+            return 0.9
+        } else {
+            return 0.85
+        }
+    }
+    
+    private func getCardOffset(for index: Int, currentIndex: Int) -> CGFloat {
+        let difference = index - currentIndex
+        if difference <= 0 {
+            return 0
+        } else {
+            // Each card below the top one moves down a bit
+            return CGFloat(difference) * 10
+        }
+    }
+    
+    private func getCardOpacity(for index: Int, currentIndex: Int, total: Int) -> Double {
+        let difference = index - currentIndex
+        if difference <= 0 {
+            return 1.0
+        } else if difference == 1 {
+            return 0.8
+        } else if difference == 2 {
+            return 0.6
+        } else {
+            return 0.4
+        }
     }
     
     private func loadMeals() {
-        // Load appropriate meals based on the action type
-        if swipeAction == .offer {
-            // For offering, load user's available meals
-            meals = dataController.availableMeals.filter {
-                $0.status == .available && Calendar.current.isDateInToday($0.date)
-            }
-        } else {
-            // For claiming, load meals offered by others
-            meals = dataController.availableMeals.filter {
-                $0.status == .offered && 
-                $0.offeredBy != dataController.currentUser?.id && 
-                ($0.offerExpiryTime == nil || $0.offerExpiryTime! > Date())
-            }
-            
-            // Force reload from data source if no meals are found 
-            // (in case the DataController cached values need refreshing)
-            if meals.isEmpty {
-                dataController.refreshData()
+        loadingMeals = true
+        
+        // Force a data refresh before loading meals
+        dataController.refreshData()
+        
+        // Create a slight delay to show loading state
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            // Load appropriate meals based on the action type
+            if swipeAction == .offer {
+                // For offering, load user's available meals
+                meals = dataController.availableMeals.filter {
+                    $0.status == .available && Calendar.current.isDateInToday($0.date)
+                }
+                
+                // If no meals to offer, create some sample ones
+                if meals.isEmpty {
+                    self.createSampleAvailableMeals()
+                    meals = dataController.availableMeals.filter {
+                        $0.status == .available && Calendar.current.isDateInToday($0.date)
+                    }
+                }
+            } else {
+                // For claiming, load meals offered by others
                 meals = dataController.availableMeals.filter {
                     $0.status == .offered && 
                     $0.offeredBy != dataController.currentUser?.id && 
                     ($0.offerExpiryTime == nil || $0.offerExpiryTime! > Date())
                 }
                 
-                // If still empty after refresh, display an informative message
+                // Force reload from data source if no meals are found 
+                // (in case the DataController cached values need refreshing)
                 if meals.isEmpty {
-                    print("No claimable meals found after data refresh")
+                    dataController.refreshData()
+                    meals = dataController.availableMeals.filter {
+                        $0.status == .offered && 
+                        $0.offeredBy != dataController.currentUser?.id && 
+                        ($0.offerExpiryTime == nil || $0.offerExpiryTime! > Date())
+                    }
                     
-                    // For demo purposes, create some sample meals to claim if none exist
-                    if swipeAction == .claim {
+                    // If still empty after refresh, create sample meals to claim
+                    if meals.isEmpty {
+                        print("No claimable meals found after data refresh")
                         createSampleOfferedMeals()
                         meals = dataController.availableMeals.filter {
                             $0.status == .offered && 
@@ -264,21 +345,77 @@ struct SwapView: View {
                     }
                 }
             }
+            
+            print("Loaded \(meals.count) meals for \(swipeAction == .offer ? "offering" : "claiming")")
+            currentIndex = 0
+            translation = .zero
+            loadingMeals = false
+        }
+    }
+    
+    // For demo purposes - creates sample meals that are available to offer
+    private func createSampleAvailableMeals() {
+        // Create some sample meals the user can offer
+        let sampleAvailableMeals: [Meal] = [
+            Meal(id: "sample-available1", 
+                 name: "Chicken Sandwich", 
+                 description: "Grilled chicken breast with lettuce, tomato and mayo in a whole wheat bun", 
+                 imageURL: "chicken_sandwich", 
+                 type: .lunch, 
+                 status: .available,
+                 date: Date(), 
+                 location: "Main Cafeteria",
+                 nutritionInfo: NutritionInfo(calories: 420, protein: 28.0, carbs: 45.0, fat: 12.0, allergens: ["Gluten"], dietaryInfo: [])),
+                 
+            Meal(id: "sample-available2", 
+                 name: "Fruit Salad", 
+                 description: "Fresh seasonal fruits with a honey-lime dressing", 
+                 imageURL: "fruit_salad", 
+                 type: .snack, 
+                 status: .available,
+                 date: Date(), 
+                 location: "Snack Corner",
+                 nutritionInfo: NutritionInfo(calories: 120, protein: 2.0, carbs: 28.0, fat: 0.5, allergens: [], dietaryInfo: ["Vegan", "Vegetarian"])),
+                 
+            // New meal with placeholder image
+            Meal(id: "sample-available3", 
+                 name: "Spinach Quiche", 
+                 description: "Savory spinach and cheese quiche with flaky crust", 
+                 imageURL: "vegetable_soup", // Placeholder asset
+                 type: .lunch, 
+                 status: .available,
+                 date: Date(), 
+                 location: "Faculty Lounge",
+                 nutritionInfo: NutritionInfo(calories: 380, protein: 15.0, carbs: 22.0, fat: 28.0, allergens: ["Gluten", "Dairy"], dietaryInfo: ["Vegetarian"])),
+                 
+            // Another new meal with placeholder image
+            Meal(id: "sample-available4", 
+                 name: "Quinoa Bowl", 
+                 description: "Protein-packed quinoa with roasted vegetables and tahini", 
+                 imageURL: "curry_rice", // Placeholder asset
+                 type: .dinner, 
+                 status: .available,
+                 date: Date(), 
+                 location: "Main Cafeteria",
+                 nutritionInfo: NutritionInfo(calories: 340, protein: 12.0, carbs: 58.0, fat: 9.0, allergens: ["Sesame"], dietaryInfo: ["Vegan", "Vegetarian", "Gluten-Free"]))
+        ]
+        
+        // Add these meals to the data controller
+        for meal in sampleAvailableMeals {
+            dataController.updateMeal(meal)
         }
         
-        print("Loaded \(meals.count) meals for \(swipeAction == .offer ? "offering" : "claiming")")
-        currentIndex = 0
-        translation = .zero
+        print("Created \(sampleAvailableMeals.count) sample meals for offering")
     }
     
     // For demo purposes only - creates sample meals that can be claimed
     private func createSampleOfferedMeals() {
-        // Only create sample meals if we're in claim mode and no meals are available
-        guard swipeAction == .claim && meals.isEmpty else { return }
+        // Only create sample meals if we're in claim mode
+        guard swipeAction == .claim else { return }
         
-        // Sample offered meals
+        // Sample offered meals - always create these for demo purposes
         let sampleOfferedMeals: [Meal] = [
-            Meal(id: "sample1", 
+            Meal(id: "sample-offered1", 
                  name: "Chicken Caesar Wrap", 
                  description: "Fresh romaine lettuce with grilled chicken in a whole wheat wrap", 
                  imageURL: "caesar_salad", 
@@ -290,7 +427,7 @@ struct SwapView: View {
                  offeredBy: "2", // Offered by someone else
                  offerExpiryTime: Date().addingTimeInterval(3600)), // 1 hour from now
             
-            Meal(id: "sample2", 
+            Meal(id: "sample-offered2", 
                  name: "Vegetable Stir Fry", 
                  description: "Mixed vegetables stir-fried with tofu and teriyaki sauce", 
                  imageURL: "vegetable_soup", 
@@ -302,7 +439,7 @@ struct SwapView: View {
                  offeredBy: "2", // Offered by someone else
                  offerExpiryTime: Date().addingTimeInterval(2700)), // 45 minutes from now
             
-            Meal(id: "sample3", 
+            Meal(id: "sample-offered3", 
                  name: "Fruit Parfait", 
                  description: "Yogurt with fresh berries and granola", 
                  imageURL: "fruit_salad", 
@@ -340,7 +477,7 @@ struct SwapView: View {
         if gesture.translation.width > threshold {
             // Swipe right = like
             swipeStatus = .liked
-            withAnimation {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                 translation = CGSize(width: UIScreen.main.bounds.width, height: 0)
             }
             
@@ -350,7 +487,7 @@ struct SwapView: View {
         } else if gesture.translation.width < -threshold {
             // Swipe left = dislike
             swipeStatus = .disliked
-            withAnimation {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                 translation = CGSize(width: -UIScreen.main.bounds.width, height: 0)
             }
             
@@ -358,7 +495,7 @@ struct SwapView: View {
             
         } else {
             // Not a strong enough swipe, return card to center
-            withAnimation(.spring()) {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                 translation = .zero
             }
         }
@@ -373,24 +510,113 @@ struct SwapView: View {
     
     private func handleSuccess() {
         // Handle success animations or feedback
-        // For now, just go to the next card
-        nextCard()
+        // Go to the next card
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            nextCard()
+        }
     }
     
     private func nextCard() {
         if currentIndex < meals.count - 1 {
             currentIndex += 1
+            // Reset for the next card
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                translation = .zero
+                swipeStatus = nil
+            }
         } else {
             // No more meals
             withAnimation {
                 meals = []
             }
+            
+            // Reload meals after a short delay to avoid empty state
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                if swipeAction == .offer {
+                    self.createSampleAvailableMeals()
+                } else {
+                    self.createSampleOfferedMeals()
+                }
+                self.loadMeals()
+            }
         }
-        
-        // Reset for the next card
-        withAnimation(.spring()) {
-            translation = .zero
-            swipeStatus = nil
+    }
+}
+
+struct OfferSuccessOverlay: View {
+    @Binding var isShowing: Bool
+    
+    var body: some View {
+        ZStack {
+            // Dark semi-transparent background
+            Color.black.opacity(0.6)
+                .edgesIgnoringSafeArea(.all)
+            
+            // Success card
+            VStack(spacing: 24) {
+                // Success icon
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 70))
+                    .foregroundColor(.green)
+                    .padding(.top, 10)
+                
+                // Title with high contrast
+                Text("Meal Offered!")
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundColor(.black)
+                
+                // Message with high contrast
+                Text("Your meal has been offered successfully")
+                    .font(.headline)
+                    .foregroundColor(.black)
+                    .multilineTextAlignment(.center)
+                
+                Divider()
+                    .padding(.horizontal, 30)
+                
+                // Information text
+                Text("Users nearby will now be able to claim it")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+                
+                // Action button
+                Button(action: {
+                    withAnimation(.spring()) {
+                        isShowing = false
+                    }
+                }) {
+                    Text("OK")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .frame(width: 120)
+                        .padding(.vertical, 14)
+                        .background(Color("FiestaPrimary"))
+                        .cornerRadius(12)
+                }
+                .padding(.top, 10)
+                .padding(.bottom, 5)
+            }
+            .padding(30)
+            .background(Color.white)
+            .cornerRadius(20)
+            .shadow(color: Color.black.opacity(0.2), radius: 15, x: 0, y: 5)
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+            )
+            .padding(.horizontal, 30)
+        }
+        .transition(.opacity)
+        .onAppear {
+            // Auto-dismiss after 2.5 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                withAnimation(.easeOut(duration: 0.3)) {
+                    isShowing = false
+                }
+            }
         }
     }
 }
@@ -492,41 +718,20 @@ struct SwipeMealCardView: View {
                 
                 if let nutritionInfo = meal.nutritionInfo {
                     Divider()
-                        .padding(.vertical, 5)
                     
-                    HStack(spacing: 15) {
-                        HStack {
-                            Text("\(nutritionInfo.calories)")
-                                .font(.footnote)
-                                .fontWeight(.bold)
-                            Text("cal")
-                                .font(.caption)
-                                .foregroundColor(.gray)
-                        }
+                    HStack {
+                        NutritionBadge(value: "\(nutritionInfo.calories)", unit: "cal")
                         
-                        HStack {
-                            Text("\(Int(nutritionInfo.protein))g")
-                                .font(.footnote)
-                                .fontWeight(.bold)
-                            Text("protein")
-                                .font(.caption)
-                                .foregroundColor(.gray)
-                        }
+                        NutritionBadge(value: "\(Int(nutritionInfo.protein))g", unit: "protein")
                         
-                        if let dietaryInfo = nutritionInfo.dietaryInfo, !dietaryInfo.isEmpty {
-                            ForEach(dietaryInfo.prefix(1), id: \.self) { info in
-                                Text(info)
-                                    .font(.caption)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 2)
-                                    .background(Color.green.opacity(0.1))
-                                    .foregroundColor(.green)
-                                    .cornerRadius(8)
-                            }
-                        }
+                        NutritionBadge(value: "\(Int(nutritionInfo.carbs))g", unit: "carbs")
+                        
+                        NutritionBadge(value: "\(Int(nutritionInfo.fat))g", unit: "fat")
+                        
+                        Spacer()
                         
                         if let allergens = nutritionInfo.allergens, !allergens.isEmpty {
-                            HStack {
+                            HStack(spacing: 2) {
                                 Image(systemName: "exclamationmark.triangle.fill")
                                     .foregroundColor(.orange)
                                     .font(.caption)
@@ -567,148 +772,55 @@ struct SwipeMealCardView: View {
         .background(Color(.systemBackground))
         .cornerRadius(15)
         .shadow(radius: 5)
-        .frame(width: 320, height: 450)
         .rotationEffect(Angle(degrees: isTop ? rotation : 0))
         .offset(x: isTop ? translation.width : 0, y: isTop ? translation.height : 0)
     }
     
     private func formatTime(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
+        formatter.timeStyle = .short
         return formatter.string(from: date)
     }
     
     private func timeRemaining(_ expiryTime: Date) -> String {
-        let remaining = expiryTime.timeIntervalSince(Date())
+        let remaining = Int(expiryTime.timeIntervalSince(Date()) / 60)
         
         if remaining <= 0 {
             return "Expired"
-        }
-        
-        let minutes = Int(remaining / 60)
-        if minutes < 60 {
-            return "\(minutes)m left"
+        } else if remaining == 1 {
+            return "1 min left"
+        } else if remaining < 60 {
+            return "\(remaining) mins left"
         } else {
-            let hours = minutes / 60
-            let mins = minutes % 60
-            return "\(hours)h \(mins)m left"
+            let hours = remaining / 60
+            let mins = remaining % 60
+            if mins == 0 {
+                return "\(hours)h left"
+            } else {
+                return "\(hours)h \(mins)m left"
+            }
         }
     }
 }
 
-struct ClaimSuccessView: View {
-    @Environment(\.presentationMode) var presentationMode
-    @EnvironmentObject private var dataController: DataController
-    var meal: Meal?
+struct NutritionBadge: View {
+    let value: String
+    let unit: String
     
     var body: some View {
-        VStack(spacing: 25) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 100))
-                .foregroundColor(.green)
-            
-            Text("Meal Successfully Claimed!")
-                .font(.title)
+        VStack(spacing: 0) {
+            Text(value)
+                .font(.caption)
                 .fontWeight(.bold)
             
-            if let meal = meal {
-                VStack(alignment: .leading, spacing: 15) {
-                    Text("Pickup Details")
-                        .font(.headline)
-                    
-                    HStack {
-                        Image(systemName: "mappin.circle.fill")
-                            .foregroundColor(.red)
-                        Text(meal.location)
-                    }
-                    
-                    HStack {
-                        Image(systemName: "clock.fill")
-                            .foregroundColor(.blue)
-                        Text("Pickup by \(formatClaimTime(meal.claimDeadlineTime))")
-                    }
-                }
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(Color.gray.opacity(0.1))
-                .cornerRadius(12)
-                
-                // Environmental Impact
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Environmental Impact")
-                        .font(.headline)
-                    
-                    Text("By claiming this meal, you've helped save:")
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
-                    
-                    // Calculate environmental impact of one meal
-                    let impact = EnvironmentalImpactCalculator.calculateTotalImpact(mealCount: 1)
-                    
-                    HStack(spacing: 20) {
-                        EnvironmentalImpactItem(
-                            icon: "leaf.fill",
-                            value: EnvironmentalImpactCalculator.formatImpact(type: "co2", value: impact["co2"] ?? 0),
-                            label: "CO₂ Emissions",
-                            color: .green
-                        )
-                        
-                        EnvironmentalImpactItem(
-                            icon: "drop.fill",
-                            value: EnvironmentalImpactCalculator.formatImpact(type: "water", value: impact["water"] ?? 0),
-                            label: "Water",
-                            color: .blue
-                        )
-                        
-                        EnvironmentalImpactItem(
-                            icon: "bolt.fill",
-                            value: EnvironmentalImpactCalculator.formatImpact(type: "energy", value: impact["energy"] ?? 0),
-                            label: "Energy",
-                            color: .orange
-                        )
-                    }
-                }
-                .padding()
-                .background(Color.gray.opacity(0.1))
-                .cornerRadius(12)
-                
-                // QR Code for pickup verification
-                Image(systemName: "qrcode")
-                    .font(.system(size: 150))
-                    .padding()
-                    .background(Color.white)
-                    .cornerRadius(12)
-                    .shadow(color: Color.black.opacity(0.1), radius: 5)
-                
-                Text("Show this QR code at the pickup location")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-            }
-            
-            Button(action: {
-                presentationMode.wrappedValue.dismiss()
-            }) {
-                Text("Done")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                    .padding()
-                    .frame(maxWidth: .infinity)
-                    .background(Color("FiestaPrimary"))
-                    .cornerRadius(15)
-                    .shadow(color: Color("FiestaPrimary").opacity(0.4), radius: 5)
-            }
-            .padding(.top)
+            Text(unit)
+                .font(.caption2)
+                .foregroundColor(.gray)
         }
-        .padding()
-    }
-    
-    private func formatClaimTime(_ date: Date?) -> String {
-        guard let date = date else { return "Unknown" }
-        
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
-        return formatter.string(from: date)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(Color.gray.opacity(0.1))
+        .cornerRadius(6)
     }
 }
 

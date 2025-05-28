@@ -3,259 +3,282 @@ import SwiftUI
 struct LeaderboardView: View {
     @EnvironmentObject private var dataController: DataController
     @State private var selectedPeriod = "Weekly"
+    @State private var isRefreshing = false
     let periods = ["Weekly", "Monthly", "All Time"]
     
     var body: some View {
         NavigationView {
-            VStack(spacing: 10) {
+            VStack(spacing: 0) {
                 // Period selector
-                HStack {
-                    ForEach(periods, id: \.self) { period in
-                        Button(action: {
-                            selectedPeriod = period
-                        }) {
-                            Text(period)
-                                .font(.subheadline)
-                                .fontWeight(selectedPeriod == period ? .bold : .regular)
-                                .padding(.vertical, 8)
-                                .padding(.horizontal, 12)
-                                .background(
-                                    selectedPeriod == period ? 
-                                        Color("FiestaPrimary") : 
-                                        Color.gray.opacity(0.1)
-                                )
-                                .foregroundColor(selectedPeriod == period ? .white : .primary)
-                                .cornerRadius(20)
+                VStack(spacing: 0) {
+                    HStack {
+                        Picker("Time Period", selection: $selectedPeriod) {
+                            ForEach(periods, id: \.self) { period in
+                                Text(period).tag(period)
+                            }
                         }
+                        .pickerStyle(SegmentedPickerStyle())
+                        .padding(.horizontal)
                     }
+                    .padding(.vertical, 10)
+                    .background(Color(.systemBackground))
                 }
-                .padding(.top)
                 
                 // User's personal rank card
                 if let currentUser = dataController.currentUser,
                    let rank = currentUser.leaderboardRank {
                     PersonalRankView(user: currentUser, rank: rank)
-                        .padding(.vertical)
+                        .padding(.horizontal)
+                        .padding(.top, 12)
+                        .padding(.bottom, 8)
                 }
+                
+                // Top 3 Podium
+                if dataController.leaderboard.count >= 3 {
+                    PodiumView(
+                        firstPlace: dataController.leaderboard[0],
+                        secondPlace: dataController.leaderboard[1],
+                        thirdPlace: dataController.leaderboard[2]
+                    )
+                    .padding(.bottom, 12)
+                    .background(Color(.systemBackground))
+                }
+                
+                // Leaderboard title
+                HStack {
+                    Text("Leaderboard")
+                        .font(.headline)
+                        .foregroundColor(.gray)
+                    Spacer()
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+                .background(Color(.systemGroupedBackground))
                 
                 // Leaderboard list
                 List {
-                    // Top 3 Users with visual distinction
-                    if dataController.leaderboard.count >= 1 {
-                        TopRankView(user: dataController.leaderboard[0], rank: 1)
-                            .padding(.vertical, 8)
-                            .listRowSeparator(.hidden)
-                    }
-                    
-                    if dataController.leaderboard.count >= 2 {
-                        TopRankView(user: dataController.leaderboard[1], rank: 2)
-                            .padding(.vertical, 8)
-                            .listRowSeparator(.hidden)
-                    }
-                    
-                    if dataController.leaderboard.count >= 3 {
-                        TopRankView(user: dataController.leaderboard[2], rank: 3)
-                            .padding(.vertical, 8)
-                            .listRowSeparator(.hidden)
-                    }
-                    
-                    // Remaining Users
+                    // Remaining Users (starting from 4th place)
                     ForEach(dataController.leaderboard.dropFirst(3)) { user in
                         UserRankRow(user: user)
-                            .padding(.vertical, 4)
+                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     }
                 }
                 .listStyle(.plain)
                 .refreshable {
-                    dataController.updateLeaderboard()
+                    await refreshLeaderboard()
                 }
+                .overlay(
+                    Group {
+                        if dataController.leaderboard.isEmpty {
+                            VStack {
+                                ProgressView()
+                                    .scaleEffect(1.5)
+                                    .padding()
+                                Text("Loading leaderboard...")
+                                    .foregroundColor(.gray)
+                            }
+                        }
+                    }
+                )
             }
             .navigationTitle("CQ Leaderboard")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
-                        // Refresh leaderboard
-                        dataController.updateLeaderboard()
+                        Task {
+                            await refreshLeaderboard()
+                        }
                     }) {
-                        Image(systemName: "arrow.clockwise")
+                        if isRefreshing {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle())
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                        }
                     }
+                    .disabled(isRefreshing)
                 }
+            }
+            .onAppear {
+                dataController.updateLeaderboard()
             }
         }
     }
+    
+    private func refreshLeaderboard() async {
+        isRefreshing = true
+        
+        // Simulate network delay
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
+        
+        // Update leaderboard
+        dataController.updateLeaderboard()
+        
+        isRefreshing = false
+    }
 }
 
-struct TopRankView: View {
-    let user: User
-    let rank: Int
+struct PodiumView: View {
+    let firstPlace: User
+    let secondPlace: User
+    let thirdPlace: User
     
     var body: some View {
-        VStack {
-            ZStack(alignment: .topTrailing) {
-                // Profile image with badge
-                ZStack {
-                    Circle()
-                        .fill(
-                            rank == 1 ? Color.yellow :
-                            rank == 2 ? Color.gray :
-                            rank == 3 ? Color.brown :
-                            Color("FiestaPrimary")
-                        )
-                        .frame(width: 90, height: 90)
-                    
-                    if let profileImageURL = user.profileImageURL {
-                        Image(profileImageURL)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: 80, height: 80)
-                            .clipShape(Circle())
-                    } else {
-                        Image(systemName: "person.fill")
-                            .font(.system(size: 40))
+        HStack(alignment: .bottom, spacing: 0) {
+            // Second place (left)
+            VStack(spacing: 4) {
+                ProfileImage(user: secondPlace, size: 70)
+                    .overlay(
+                        RankBadge(rank: 2)
+                            .offset(x: 20, y: -10)
+                    )
+                
+                Text(secondPlace.name.split(separator: " ").first ?? "")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                
+                Text("\(Int(secondPlace.cqScore))")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(Color("FiestaPrimary"))
+                
+                Rectangle()
+                    .fill(Color.gray.opacity(0.7))
+                    .frame(width: 80, height: 60)
+                    .cornerRadius(5, corners: [.topLeft, .topRight])
+                    .overlay(
+                        Text("2")
+                            .font(.title)
+                            .fontWeight(.bold)
                             .foregroundColor(.white)
-                            .frame(width: 80, height: 80)
-                            .background(Color.blue.opacity(0.7))
-                            .clipShape(Circle())
-                    }
-                    
-                    // Crown for first place
-                    if rank == 1 {
-                        Image(systemName: "crown.fill")
-                            .font(.system(size: 24))
-                            .foregroundColor(.yellow)
-                            .offset(y: -50)
-                    }
-                }
-                
-                // Rank badge
-                ZStack {
-                    Circle()
-                        .fill(
-                            rank == 1 ? Color.yellow :
-                            rank == 2 ? Color.gray :
-                            rank == 3 ? Color.brown :
-                            Color("FiestaPrimary")
-                        )
-                        .frame(width: 30, height: 30)
-                    
-                    Text("\(rank)")
-                        .font(.headline)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
-                }
-                .offset(x: 10, y: -5)
-                .shadow(radius: 3)
+                    )
             }
+            .frame(width: 100)
+            .offset(y: 20)
             
-            Text(user.name)
-                .font(.headline)
-                .fontWeight(.bold)
-            
-            Text("\(Int(user.cqScore)) points")
-                .font(.subheadline)
-                .foregroundColor(.gray)
-            
-            // Badges
-            HStack(spacing: 10) {
-                if user.mealsSaved >= 10 {
-                    BadgeView(icon: "leaf.fill", color: .green)
-                }
+            // First place (center)
+            VStack(spacing: 4) {
+                Image(systemName: "crown.fill")
+                    .font(.system(size: 20))
+                    .foregroundColor(.yellow)
+                    .padding(.bottom, -5)
                 
-                if user.mealsSwapped >= 15 {
-                    BadgeView(icon: "arrow.triangle.swap", color: .blue)
-                }
+                ProfileImage(user: firstPlace, size: 80)
+                    .overlay(
+                        RankBadge(rank: 1)
+                            .offset(x: 25, y: -10)
+                    )
                 
-                if user.mealsDistributed >= 5 {
-                    BadgeView(icon: "hand.thumbsup.fill", color: .orange)
-                }
+                Text(firstPlace.name.split(separator: " ").first ?? "")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .lineLimit(1)
+                
+                Text("\(Int(firstPlace.cqScore))")
+                    .font(.subheadline)
+                    .fontWeight(.bold)
+                    .foregroundColor(Color("FiestaPrimary"))
+                
+                Rectangle()
+                    .fill(Color.yellow.opacity(0.7))
+                    .frame(width: 100, height: 80)
+                    .cornerRadius(5, corners: [.topLeft, .topRight])
+                    .overlay(
+                        Text("1")
+                            .font(.largeTitle)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                    )
             }
-            .padding(.top, 5)
+            .frame(width: 120)
             
-            // Stats
-            HStack(spacing: 15) {
-                StatView(title: "Saved", value: "\(user.mealsSaved)")
-                StatView(title: "Swapped", value: "\(user.mealsSwapped)")
-                StatView(title: "Distributed", value: "\(user.mealsDistributed)")
+            // Third place (right)
+            VStack(spacing: 4) {
+                ProfileImage(user: thirdPlace, size: 70)
+                    .overlay(
+                        RankBadge(rank: 3)
+                            .offset(x: 20, y: -10)
+                    )
+                
+                Text(thirdPlace.name.split(separator: " ").first ?? "")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                
+                Text("\(Int(thirdPlace.cqScore))")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(Color("FiestaPrimary"))
+                
+                Rectangle()
+                    .fill(Color.brown.opacity(0.7))
+                    .frame(width: 80, height: 40)
+                    .cornerRadius(5, corners: [.topLeft, .topRight])
+                    .overlay(
+                        Text("3")
+                            .font(.title)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                    )
             }
-            .padding(.top, 5)
+            .frame(width: 100)
+            .offset(y: 40)
         }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(Color(.systemBackground))
-                .shadow(color: 
-                        rank == 1 ? Color.yellow.opacity(0.3) :
-                        rank == 2 ? Color.gray.opacity(0.3) :
-                        rank == 3 ? Color.brown.opacity(0.3) :
-                        Color.black.opacity(0.3), 
-                       radius: 10)
-        )
-        .padding(.horizontal)
+        .frame(maxWidth: .infinity)
+        .padding(.top, 10)
     }
 }
 
-struct UserRankRow: View {
+struct ProfileImage: View {
     let user: User
+    let size: CGFloat
     
     var body: some View {
-        HStack(spacing: 15) {
-            // Rank number
-            Text("#\(user.leaderboardRank ?? 0)")
-                .font(.headline)
-                .fontWeight(.bold)
-                .foregroundColor(.gray)
-                .frame(width: 35)
-            
-            // Profile image
+        ZStack {
             if let profileImageURL = user.profileImageURL {
                 Image(profileImageURL)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
-                    .frame(width: 45, height: 45)
+                    .frame(width: size, height: size)
                     .clipShape(Circle())
+                    .shadow(radius: 2)
             } else {
                 Image(systemName: "person.fill")
-                    .font(.system(size: 22))
+                    .font(.system(size: size/2.5))
                     .foregroundColor(.white)
-                    .frame(width: 45, height: 45)
+                    .frame(width: size, height: size)
                     .background(Color.blue.opacity(0.7))
                     .clipShape(Circle())
-            }
-            
-            // User info
-            VStack(alignment: .leading) {
-                Text(user.name)
-                    .font(.headline)
-                
-                Text("\(Int(user.cqScore)) CQ points")
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
-            }
-            
-            Spacer()
-            
-            // Badges (simplified for row view)
-            HStack(spacing: 8) {
-                if user.mealsSaved >= 10 {
-                    Image(systemName: "leaf.fill")
-                        .foregroundColor(.green)
-                        .font(.system(size: 12))
-                        .padding(5)
-                        .background(Color.green.opacity(0.1))
-                        .clipShape(Circle())
-                }
-                
-                if user.mealsSwapped >= 15 {
-                    Image(systemName: "arrow.triangle.swap")
-                        .foregroundColor(.blue)
-                        .font(.system(size: 12))
-                        .padding(5)
-                        .background(Color.blue.opacity(0.1))
-                        .clipShape(Circle())
-                }
+                    .shadow(radius: 2)
             }
         }
-        .padding(.vertical, 5)
+    }
+}
+
+struct RankBadge: View {
+    let rank: Int
+    
+    var backgroundColor: Color {
+        switch rank {
+        case 1: return .yellow
+        case 2: return .gray
+        case 3: return .brown
+        default: return Color("FiestaPrimary")
+        }
+    }
+    
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(backgroundColor)
+                .frame(width: 26, height: 26)
+                .shadow(radius: 2)
+            
+            Text("\(rank)")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(.white)
+        }
     }
 }
 
@@ -266,80 +289,114 @@ struct PersonalRankView: View {
     var body: some View {
         HStack(spacing: 15) {
             // Profile image
-            if let profileImageURL = user.profileImageURL {
-                Image(profileImageURL)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: 60, height: 60)
-                    .clipShape(Circle())
-            } else {
-                Image(systemName: "person.fill")
-                    .font(.system(size: 30))
-                    .foregroundColor(.white)
-                    .frame(width: 60, height: 60)
-                    .background(Color.blue)
-                    .clipShape(Circle())
-            }
+            ProfileImage(user: user, size: 60)
             
-            VStack(alignment: .leading) {
-                Text("Your Rank")
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Your Ranking")
                     .font(.subheadline)
                     .foregroundColor(.gray)
                 
-                Text("#\(rank)")
-                    .font(.title)
-                    .fontWeight(.bold)
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text("#\(rank)")
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
+                    
+                    Text("of \(user.leaderboardRank != nil ? "\(user.leaderboardRank!)" : "--")")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
             }
             
             Spacer()
             
-            VStack(alignment: .trailing) {
+            VStack(alignment: .trailing, spacing: 2) {
                 Text("CQ Score")
                     .font(.subheadline)
                     .foregroundColor(.gray)
                 
                 Text("\(Int(user.cqScore))")
-                    .font(.title)
-                    .fontWeight(.bold)
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
                     .foregroundColor(Color("FiestaPrimary"))
             }
         }
         .padding()
         .background(Color(.systemBackground))
         .cornerRadius(15)
-        .shadow(color: Color.black.opacity(0.1), radius: 5)
-        .padding(.horizontal)
+        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
 }
 
-struct BadgeView: View {
+struct UserRankRow: View {
+    let user: User
+    
+    var body: some View {
+        HStack(spacing: 15) {
+            // Rank number
+            Text("#\(user.leaderboardRank ?? 0)")
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .frame(width: 40, alignment: .center)
+                .foregroundColor(.gray)
+            
+            // Profile image
+            ProfileImage(user: user, size: 45)
+            
+            // User info
+            VStack(alignment: .leading, spacing: 2) {
+                Text(user.name)
+                    .font(.system(size: 16, weight: .semibold))
+                    .lineLimit(1)
+                
+                HStack(spacing: 8) {
+                    // Mini stats
+                    StatIcon(count: user.mealsSaved, icon: "leaf.fill", color: .green)
+                    StatIcon(count: user.mealsSwapped, icon: "arrow.triangle.swap", color: .blue)
+                }
+            }
+            
+            Spacer()
+            
+            // CQ Score
+            Text("\(Int(user.cqScore))")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(Color("FiestaPrimary"))
+                .frame(width: 60, alignment: .trailing)
+        }
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+    }
+}
+
+struct StatIcon: View {
+    let count: Int
     let icon: String
     let color: Color
     
     var body: some View {
-        Image(systemName: icon)
-            .foregroundColor(color)
-            .font(.system(size: 14))
-            .padding(6)
-            .background(color.opacity(0.1))
-            .clipShape(Circle())
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 10))
+                .foregroundColor(color)
+            
+            Text("\(count)")
+                .font(.caption2)
+                .foregroundColor(.gray)
+        }
     }
 }
 
-struct StatView: View {
-    let title: String
-    let value: String
-    
-    var body: some View {
-        VStack {
-            Text(value)
-                .font(.headline)
-                .fontWeight(.bold)
-            
-            Text(title)
-                .font(.caption)
-                .foregroundColor(.gray)
-        }
+// Helper for custom rounded corners
+extension View {
+    func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
+        clipShape(RoundedCorner(radius: radius, corners: corners))
+    }
+}
+
+struct RoundedCorner: Shape {
+    var radius: CGFloat = .infinity
+    var corners: UIRectCorner = .allCorners
+
+    func path(in rect: CGRect) -> Path {
+        let path = UIBezierPath(roundedRect: rect, byRoundingCorners: corners, cornerRadii: CGSize(width: radius, height: radius))
+        return Path(path.cgPath)
     }
 }
 

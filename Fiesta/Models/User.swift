@@ -16,6 +16,8 @@ struct User: Identifiable, Codable {
     var profileImageURL: String?
     var createdAt: Date
     var isActive: Bool
+    var dietaryPreferences: DietaryPreferences?
+    var generalPreferences: GeneralPreferences?
     
     // For students
     var mealsSaved: Int
@@ -31,6 +33,8 @@ struct User: Identifiable, Codable {
          profileImageURL: String? = nil,
          createdAt: Date = Date(),
          isActive: Bool = true,
+         dietaryPreferences: DietaryPreferences? = nil,
+         generalPreferences: GeneralPreferences? = nil,
          mealsSaved: Int = 0,
          mealsSwapped: Int = 0,
          mealsDistributed: Int = 0) {
@@ -43,6 +47,8 @@ struct User: Identifiable, Codable {
         self.profileImageURL = profileImageURL
         self.createdAt = createdAt
         self.isActive = isActive
+        self.dietaryPreferences = dietaryPreferences
+        self.generalPreferences = generalPreferences
         self.mealsSaved = mealsSaved
         self.mealsSwapped = mealsSwapped
         self.mealsDistributed = mealsDistributed

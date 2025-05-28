@@ -228,6 +228,7 @@ struct SignupView: View {
     @State private var alertTitle = ""
     @State private var alertMessage = ""
     @State private var registrationSuccess = false
+    @State private var showingOnboarding = false
     
     // Binding to notify parent view after successful registration
     var onSignupComplete: (Bool) -> Void
@@ -302,11 +303,19 @@ struct SignupView: View {
                 message: Text(alertMessage),
                 dismissButton: .default(Text("OK")) {
                     if registrationSuccess {
-                        onSignupComplete(true)
-                        presentationMode.wrappedValue.dismiss()
+                        showOnboarding()
                     }
                 }
             )
+        }
+        .fullScreenCover(isPresented: $showingOnboarding) {
+            OnboardingView(onComplete: {
+                // Only pass true to onSignupComplete to finalize registration
+                // after onboarding is complete
+                onSignupComplete(true)
+                presentationMode.wrappedValue.dismiss()
+            })
+            .environmentObject(dataController)
         }
     }
     
@@ -347,10 +356,15 @@ struct SignupView: View {
         
         if success {
             registrationSuccess = true
-            showAlert(title: "Registration Success", message: "Your account has been created successfully!")
+            // Show onboarding immediately instead of showing alert first
+            showOnboarding()
         } else {
             showAlert(title: "Registration Failed", message: "This email may already be registered.")
         }
+    }
+    
+    private func showOnboarding() {
+        showingOnboarding = true
     }
     
     private func showAlert(title: String, message: String) {

@@ -43,11 +43,11 @@ struct ProfileView: View {
                     Toggle("Dark Mode", isOn: $darkModeEnabled)
                         .tint(Color("FiestaPrimary"))
                     
-                    NavigationLink(destination: Text("Preferences Screen")) {
+                    NavigationLink(destination: PreferencesView()) {
                         Label("Preferences", systemImage: "slider.horizontal.3")
                     }
                     
-                    NavigationLink(destination: Text("Dietary Preferences Screen")) {
+                    NavigationLink(destination: DietaryPreferencesView()) {
                         Label("Dietary Preferences", systemImage: "fork.knife")
                     }
                 }
