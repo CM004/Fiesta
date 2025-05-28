@@ -3,122 +3,136 @@ import SwiftUI
 struct HomeView: View {
     @EnvironmentObject private var dataController: DataController
     @State private var showingSwapView = false
+    @State private var selectedTab = 0
     
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(spacing: 20) {
+                VStack(spacing: 25) {
                     // Today's Meal Section
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 15) {
                         Text("Today's Meals")
-                            .font(.largeTitle)
-                            .fontWeight(.bold)
+                            .font(.system(size: 28, weight: .bold, design: .rounded))
                         
                         if let todayMeal = dataController.availableMeals.first(where: {
                             Calendar.current.isDateInToday($0.date)
                         }) {
                             MealCardView(meal: todayMeal)
+                                .transition(.scale.combined(with: .opacity))
                         } else {
-                            Text("No meals available for today")
-                                .font(.headline)
-                                .foregroundColor(.gray)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                                .padding()
-                                .background(Color(.systemBackground))
-                                .cornerRadius(12)
-                                .shadow(color: Color.black.opacity(0.1), radius: 5)
+                            EmptyStateView(
+                                icon: "fork.knife",
+                                title: "No Meals Available",
+                                message: "Check back later for today's meals"
+                            )
                         }
                     }
                     .padding(.horizontal)
                     
                     // Quick Stats Section
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Your Stats")
-                            .font(.title2)
-                            .fontWeight(.bold)
+                    VStack(alignment: .leading, spacing: 15) {
+                        Text("Your Impact")
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
                         
-                        HStack(spacing: 15) {
-                            StatsCardView(
-                                title: "Meals Saved",
-                                value: "\(dataController.currentUser?.mealsSaved ?? 0)",
-                                icon: "leaf.fill",
-                                color: .green
-                            )
-                            
-                            StatsCardView(
-                                title: "CQ Score",
-                                value: "\(Int(dataController.currentUser?.cqScore ?? 0))",
-                                icon: "brain.fill",
-                                color: .blue
-                            )
-                            
-                            if let rank = dataController.currentUser?.leaderboardRank {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 15) {
                                 StatsCardView(
-                                    title: "Rank",
-                                    value: "#\(rank)",
-                                    icon: "trophy.fill",
-                                    color: .orange
+                                    title: "Meals Saved",
+                                    value: "\(dataController.currentUser?.mealsSaved ?? 0)",
+                                    icon: "leaf.fill",
+                                    color: .green,
+                                    gradient: [Color.green.opacity(0.8), Color.green.opacity(0.6)]
                                 )
+                                
+                                StatsCardView(
+                                    title: "CQ Score",
+                                    value: "\(Int(dataController.currentUser?.cqScore ?? 0))",
+                                    icon: "brain.fill",
+                                    color: .blue,
+                                    gradient: [Color.blue.opacity(0.8), Color.blue.opacity(0.6)]
+                                )
+                                
+                                if let rank = dataController.currentUser?.leaderboardRank {
+                                    StatsCardView(
+                                        title: "Rank",
+                                        value: "#\(rank)",
+                                        icon: "trophy.fill",
+                                        color: .orange,
+                                        gradient: [Color.orange.opacity(0.8), Color.orange.opacity(0.6)]
+                                    )
+                                }
                             }
+                            .padding(.horizontal, 5)
                         }
                     }
                     .padding(.horizontal)
                     
                     // Call-to-Action Button
                     Button(action: {
-                        showingSwapView = true
+                        withAnimation {
+                            showingSwapView = true
+                        }
                     }) {
-                        HStack {
+                        HStack(spacing: 12) {
                             Image(systemName: "arrow.left.arrow.right.circle.fill")
-                                .font(.title)
+                                .font(.system(size: 24))
                             
                             Text("Swap My Meal")
                                 .font(.headline)
                                 .fontWeight(.semibold)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color("FiestaPrimary"))
+                        .frame(height: 60)
+                        .background(
+                            LinearGradient(
+                                gradient: Gradient(colors: [
+                                    Color("FiestaPrimary"),
+                                    Color("FiestaPrimary").opacity(0.8)
+                                ]),
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
                         .foregroundColor(.white)
-                        .cornerRadius(10)
+                        .cornerRadius(20)
+                        .shadow(color: Color("FiestaPrimary").opacity(0.3), radius: 10, x: 0, y: 5)
                     }
                     .padding(.horizontal)
                     
                     // Upcoming Meals Section
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 15) {
                         Text("Upcoming Meals")
-                            .font(.title2)
-                            .fontWeight(.bold)
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
                         
-                        ForEach(dataController.availableMeals.filter {
+                        let upcomingMeals = dataController.availableMeals.filter {
                             let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
                             return $0.date > Date() && Calendar.current.isDate($0.date, inSameDayAs: tomorrow)
-                        }) { meal in
-                            MealCardView(meal: meal, isCompact: true)
                         }
                         
-                        if !dataController.availableMeals.contains(where: { 
-                            let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
-                            return $0.date > Date() && Calendar.current.isDate($0.date, inSameDayAs: tomorrow)
-                        }) {
-                            Text("No upcoming meals")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
-                                .padding()
-                                .frame(maxWidth: .infinity)
+                        if !upcomingMeals.isEmpty {
+                            ForEach(upcomingMeals) { meal in
+                                MealCardView(meal: meal, isCompact: true)
+                                    .transition(.scale.combined(with: .opacity))
+                            }
+                        } else {
+                            EmptyStateView(
+                                icon: "calendar",
+                                title: "No Upcoming Meals",
+                                message: "Check back later for new meal listings"
+                            )
                         }
                     }
                     .padding(.horizontal)
                     
-                    // Swapped/Claimed Meals Section
+                    // Claimed Meals Section
                     if !dataController.claimedMeals.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 15) {
                             Text("Your Claimed Meals")
-                                .font(.title2)
-                                .fontWeight(.bold)
+                                .font(.system(size: 24, weight: .bold, design: .rounded))
                             
                             ForEach(dataController.claimedMeals) { meal in
                                 ClaimedMealView(meal: meal)
+                                    .transition(.scale.combined(with: .opacity))
                             }
                         }
                         .padding(.horizontal)
@@ -126,22 +140,14 @@ struct HomeView: View {
                 }
                 .padding(.vertical)
             }
-            .navigationTitle("Fiesta")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Image("AppLogo")
                         .resizable()
                         .frame(width: 40, height: 40)
-                }
-                
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: {
-                        // Refresh data action
-                        dataController.refreshData()
-                    }) {
-                        Image(systemName: "arrow.clockwise")
-                    }
+                        .clipShape(Circle())
+                        .shadow(color: Color.black.opacity(0.1), radius: 5)
                 }
             }
             .sheet(isPresented: $showingSwapView) {
@@ -150,9 +156,37 @@ struct HomeView: View {
             }
         }
         .onAppear {
-            // Refresh data when view appears
-            dataController.refreshData()
+            withAnimation {
+                dataController.refreshData()
+            }
         }
+    }
+}
+
+struct EmptyStateView: View {
+    let icon: String
+    let title: String
+    let message: String
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 40))
+                .foregroundColor(.gray.opacity(0.8))
+            
+            Text(title)
+                .font(.headline)
+                .foregroundColor(.gray)
+            
+            Text(message)
+                .font(.subheadline)
+                .foregroundColor(.gray.opacity(0.8))
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 30)
+        .background(Color(.systemGray6))
+        .cornerRadius(15)
     }
 }
 
@@ -231,51 +265,6 @@ struct MealCardView: View {
                     }
                 }
             }
-            
-            if let nutritionInfo = meal.nutritionInfo, !isCompact {
-                Divider()
-                    .padding(.vertical, 5)
-                
-                HStack(spacing: 15) {
-                    VStack {
-                        Text("\(nutritionInfo.calories)")
-                            .font(.headline)
-                            .fontWeight(.bold)
-                        Text("Calories")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    }
-                    
-                    VStack {
-                        Text("\(Int(nutritionInfo.protein))g")
-                            .font(.headline)
-                            .fontWeight(.bold)
-                        Text("Protein")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    }
-                    
-                    VStack {
-                        Text("\(Int(nutritionInfo.carbs))g")
-                            .font(.headline)
-                            .fontWeight(.bold)
-                        Text("Carbs")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    }
-                    
-                    if let allergens = nutritionInfo.allergens, !allergens.isEmpty {
-                        VStack {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundColor(.orange)
-                            Text("Allergens")
-                                .font(.caption)
-                                .foregroundColor(.gray)
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity)
-            }
         }
         .padding()
         .background(Color(.systemBackground))
@@ -295,28 +284,37 @@ struct StatsCardView: View {
     let value: String
     let icon: String
     let color: Color
+    let gradient: [Color]
     
     var body: some View {
-        VStack {
-            Image(systemName: icon)
-                .font(.title)
-                .foregroundColor(color)
-                .padding(.bottom, 5)
-            
-            Text(value)
-                .font(.title2)
-                .fontWeight(.bold)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: icon)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(.white)
+                
+                Spacer()
+                
+                Text(value)
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+            }
             
             Text(title)
-                .font(.caption)
-                .foregroundColor(.gray)
-                .multilineTextAlignment(.center)
+                .font(.subheadline)
+                .foregroundColor(.white.opacity(0.9))
         }
-        .frame(maxWidth: .infinity)
         .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.1), radius: 5)
+        .frame(width: 160, height: 100)
+        .background(
+            LinearGradient(
+                gradient: Gradient(colors: gradient),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .cornerRadius(20)
+        .shadow(color: color.opacity(0.3), radius: 10, x: 0, y: 5)
     }
 }
 

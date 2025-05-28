@@ -98,120 +98,179 @@ struct LoginView: View {
     @Binding var showingError: Bool
     @Binding var errorMessage: String
     @State private var showingSignup = false
+    @State private var isEmailFocused = false
+    @State private var isPasswordFocused = false
+    @State private var isLoading = false
     let login: () -> Void
     
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(spacing: 30) {
-                    // Logo
-                    VStack {
-                        Image(systemName: "leaf.circle.fill")
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 100, height: 100)
-                            .foregroundColor(Color("FiestaPrimary"))
-                        
-                        Text("Fiesta")
-                            .font(.largeTitle)
-                            .fontWeight(.bold)
-                        
-                        Text("Reduce Food Waste, Together")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                    }
-                    .padding(.top, 50)
-                    
-                    // Login Form
-                    VStack(spacing: 20) {
-                        TextField("Email", text: $email)
-                            .padding()
-                            .background(Color(.systemGray6))
-                            .cornerRadius(10)
-                            .keyboardType(.emailAddress)
-                            .autocapitalization(.none)
-                        
-                        SecureField("Password", text: $password)
-                            .padding()
-                            .background(Color(.systemGray6))
-                            .cornerRadius(10)
-                        
-                        Button(action: {
-                            login()
-                        }) {
-                            Text("Log In")
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color("FiestaPrimary"))
-                                .cornerRadius(10)
-                        }
-                        
-                        Button(action: {
-                            // Use demo credentials
-                            email = "student1@test.com"
-                            password = "password"
-                            login()
-                        }) {
-                            Text("Use Demo Account")
-                                .fontWeight(.medium)
+            ZStack {
+                // Background gradient
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color("FiestaPrimary").opacity(0.1),
+                        Color.white
+                    ]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 35) {
+                        // Logo and Title Section
+                        VStack(spacing: 15) {
+                            Image(systemName: "leaf.circle.fill")
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 120, height: 120)
                                 .foregroundColor(Color("FiestaPrimary"))
+                                .shadow(color: Color("FiestaPrimary").opacity(0.3), radius: 10)
+                                .padding(.top, 50)
+                            
+                            Text("Fiesta")
+                                .font(.system(size: 40, weight: .bold, design: .rounded))
+                                .foregroundColor(Color("FiestaPrimary"))
+                            
+                            Text("Reduce Food Waste, Together")
+                                .font(.title3)
+                                .foregroundColor(.gray)
+                                .multilineTextAlignment(.center)
                         }
                         
-                        HStack {
-                            Spacer()
+                        // Login Form
+                        VStack(spacing: 25) {
+                            // Email Field
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Email")
+                                    .font(.subheadline)
+                                    .foregroundColor(.gray)
+                                    .padding(.leading, 4)
+                                
+                                TextField("", text: $email)
+                                    .textFieldStyle(CustomTextFieldStyle(isFocused: $isEmailFocused))
+                                    .keyboardType(.emailAddress)
+                                    .autocapitalization(.none)
+                                    .onTapGesture { isEmailFocused = true }
+                            }
                             
+                            // Password Field
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Password")
+                                    .font(.subheadline)
+                                    .foregroundColor(.gray)
+                                    .padding(.leading, 4)
+                                
+                                SecureField("", text: $password)
+                                    .textFieldStyle(CustomTextFieldStyle(isFocused: $isPasswordFocused))
+                                    .onTapGesture { isPasswordFocused = true }
+                            }
+                            
+                            // Login Button
+                            Button(action: {
+                                withAnimation {
+                                    isLoading = true
+                                    login()
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                                        isLoading = false
+                                    }
+                                }
+                            }) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 15)
+                                        .fill(Color("FiestaPrimary"))
+                                        .frame(height: 55)
+                                        .shadow(color: Color("FiestaPrimary").opacity(0.3), radius: 5)
+                                    
+                                    if isLoading {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    } else {
+                                        Text("Log In")
+                                            .font(.headline)
+                                            .foregroundColor(.white)
+                                    }
+                                }
+                            }
+                            .disabled(isLoading)
+                            
+                            // Demo Account Button
+                            Button(action: {
+                                email = "student1@test.com"
+                                password = "password"
+                                login()
+                            }) {
+                                Text("Use Demo Account")
+                                    .font(.subheadline)
+                                    .foregroundColor(Color("FiestaPrimary"))
+                                    .padding(.vertical, 8)
+                            }
+                            
+                            // Forgot Password
                             Button(action: {
                                 // Forgot password action
                             }) {
                                 Text("Forgot Password?")
-                                    .fontWeight(.medium)
+                                    .font(.subheadline)
                                     .foregroundColor(Color("FiestaPrimary"))
                             }
                         }
-                    }
-                    .padding(.horizontal)
-                    
-                    Spacer()
-                    
-                    // Create account link
-                    VStack {
-                        Divider()
-                            .padding(.vertical)
+                        .padding(.horizontal, 25)
                         
-                        HStack {
-                            Text("Don't have an account?")
-                                .foregroundColor(.gray)
+                        Spacer()
+                        
+                        // Sign Up Section
+                        VStack(spacing: 20) {
+                            Divider()
+                                .padding(.horizontal)
                             
-                            Button(action: {
-                                showingSignup = true
-                            }) {
-                                Text("Sign Up")
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(Color("FiestaPrimary"))
+                            HStack(spacing: 5) {
+                                Text("Don't have an account?")
+                                    .foregroundColor(.gray)
+                                
+                                Button(action: {
+                                    withAnimation {
+                                        showingSignup = true
+                                    }
+                                }) {
+                                    Text("Sign Up")
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(Color("FiestaPrimary"))
+                                }
                             }
+                            .padding(.bottom, 30)
                         }
                     }
                 }
-                .padding()
             }
             .alert(isPresented: $showingError) {
                 Alert(
-                    title: Text("Login Failed"),
+                    title: Text("Login Error"),
                     message: Text(errorMessage),
                     dismissButton: .default(Text("OK"))
                 )
             }
-            .sheet(isPresented: $showingSignup) {
-                SignupView(onSignupComplete: { success in
-                    if success {
-                        isAuthenticated = true
-                    }
-                })
-                .environmentObject(dataController)
-            }
         }
+    }
+}
+
+// Custom TextField Style
+struct CustomTextFieldStyle: TextFieldStyle {
+    @Binding var isFocused: Bool
+    
+    func _body(configuration: TextField<Self._Label>) -> some View {
+        configuration
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(.systemGray6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(isFocused ? Color("FiestaPrimary") : Color.clear, lineWidth: 2)
+                    )
+            )
+            .animation(.easeInOut(duration: 0.2), value: isFocused)
     }
 }
 
