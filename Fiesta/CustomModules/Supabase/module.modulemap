@@ -1,0 +1,4 @@
+module Supabase {
+    header "Supabase.h"
+    export *
+} 

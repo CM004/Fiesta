@@ -7,104 +7,166 @@ struct ProfileView: View {
     @State private var locationServicesEnabled = true
     @State private var showingShareSheet = false
     @State private var darkModeEnabled = false
+    @State private var selectedImage: UIImage?
+    @State private var showingImagePicker = false
+    @State private var isUploadingImage = false
     
     var body: some View {
         NavigationView {
-            List {
-                // Profile Header
-                if let user = dataController.currentUser {
-                    ProfileHeaderView(user: user)
+            ZStack {
+                List {
+                    // Profile Header
+                    if let user = dataController.currentUser {
+                        ProfileHeaderView(user: user, onImageTap: {
+                            showingImagePicker = true
+                        })
                         .listRowSeparator(.hidden)
                         .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 10, trailing: 0))
-                }
-                
-                // CQ Stats
-                Section("Your Impact") {
-                    if let user = dataController.currentUser {
-                        HStack(spacing: 15) {
-                            StatBoxView(title: "CQ Score", value: "\(Int(user.cqScore))", icon: "chart.bar.fill", color: .blue)
-                            StatBoxView(title: "Meals Saved", value: "\(user.mealsSaved)", icon: "leaf.fill", color: .green)
-                            StatBoxView(title: "Rank", value: "#\(user.leaderboardRank ?? 0)", icon: "trophy.fill", color: .orange)
-                        }
-                        
-                        // Environmental Impact
-                        EnvironmentalImpactView(mealsSaved: user.mealsSaved)
-                    }
-                }
-                
-                // App Settings
-                Section("App Settings") {
-                    Toggle("Notifications", isOn: $notificationsEnabled)
-                        .tint(Color("FiestaPrimary"))
-                    
-                    Toggle("Location Services", isOn: $locationServicesEnabled)
-                        .tint(Color("FiestaPrimary"))
-                    
-                    Toggle("Dark Mode", isOn: $darkModeEnabled)
-                        .tint(Color("FiestaPrimary"))
-                    
-                    NavigationLink(destination: Text("Preferences Screen")) {
-                        Label("Preferences", systemImage: "slider.horizontal.3")
                     }
                     
-                    NavigationLink(destination: Text("Dietary Preferences Screen")) {
-                        Label("Dietary Preferences", systemImage: "fork.knife")
-                    }
-                }
-                
-                // Help & Support
-                Section("Help & Support") {
-                    NavigationLink(destination: Text("Help Center")) {
-                        Label("Help Center", systemImage: "questionmark.circle")
-                    }
-                    
-                    Button(action: {
-                        showingShareSheet = true
-                    }) {
-                        Label("Invite Friends", systemImage: "square.and.arrow.up")
-                    }
-                    
-                    NavigationLink(destination: Text("About Fiesta")) {
-                        Label("About Fiesta", systemImage: "info.circle")
-                    }
-                }
-                
-                // Account Actions
-                Section {
-                    Button(action: {
-                        showingLogoutAlert = true
-                    }) {
-                        Label("Log Out", systemImage: "arrow.right.square")
-                            .foregroundColor(.red)
-                    }
-                    
-                    if dataController.currentUser?.role == .admin {
-                        NavigationLink(destination: Text("Admin Settings")) {
-                            Label("Admin Settings", systemImage: "gear")
-                                .foregroundColor(.purple)
+                    // CQ Stats
+                    Section("Your Impact") {
+                        if let user = dataController.currentUser {
+                            HStack(spacing: 15) {
+                                StatBoxView(title: "CQ Score", value: "\(Int(user.cqScore))", icon: "chart.bar.fill", color: .blue)
+                                StatBoxView(title: "Meals Saved", value: "\(user.mealsSaved)", icon: "leaf.fill", color: .green)
+                                StatBoxView(title: "Rank", value: "#\(user.leaderboardRank ?? 0)", icon: "trophy.fill", color: .orange)
+                            }
+                            
+                            // Environmental Impact
+                            EnvironmentalImpactView(mealsSaved: user.mealsSaved)
                         }
                     }
+                    
+                    // App Settings
+                    Section("App Settings") {
+                        Toggle("Notifications", isOn: $notificationsEnabled)
+                            .tint(Color("FiestaPrimary"))
+                        
+                        Toggle("Location Services", isOn: $locationServicesEnabled)
+                            .tint(Color("FiestaPrimary"))
+                        
+                        Toggle("Dark Mode", isOn: $darkModeEnabled)
+                            .tint(Color("FiestaPrimary"))
+                        
+                        NavigationLink(destination: Text("Preferences Screen")) {
+                            Label("Preferences", systemImage: "slider.horizontal.3")
+                        }
+                        
+                        NavigationLink(destination: Text("Dietary Preferences Screen")) {
+                            Label("Dietary Preferences", systemImage: "fork.knife")
+                        }
+                    }
+                    
+                    // Help & Support
+                    Section("Help & Support") {
+                        NavigationLink(destination: Text("Help Center")) {
+                            Label("Help Center", systemImage: "questionmark.circle")
+                        }
+                        
+                        Button(action: {
+                            showingShareSheet = true
+                        }) {
+                            Label("Invite Friends", systemImage: "square.and.arrow.up")
+                        }
+                        
+                        NavigationLink(destination: Text("About Fiesta")) {
+                            Label("About Fiesta", systemImage: "info.circle")
+                        }
+                    }
+                    
+                    // Account Actions
+                    Section {
+                        Button(action: {
+                            showingLogoutAlert = true
+                        }) {
+                            Label("Log Out", systemImage: "arrow.right.square")
+                                .foregroundColor(.red)
+                        }
+                        
+                        if dataController.currentUser?.role == .admin {
+                            NavigationLink(destination: Text("Admin Settings")) {
+                                Label("Admin Settings", systemImage: "gear")
+                                    .foregroundColor(.purple)
+                            }
+                        }
+                    }
+                }
+                .listStyle(InsetGroupedListStyle())
+                .navigationTitle("Profile")
+                .refreshable {
+                    // Pull to refresh
+                    dataController.refreshData()
+                }
+                .alert(isPresented: $showingLogoutAlert) {
+                    Alert(
+                        title: Text("Log Out"),
+                        message: Text("Are you sure you want to log out?"),
+                        primaryButton: .destructive(Text("Log Out")) {
+                            // Logout logic
+                            Task {
+                                await dataController.logout()
+                                
+                                // Find the root ContentView to set isAuthenticated to false
+                                // We need to use NotificationCenter for communication between views
+                                NotificationCenter.default.post(name: Notification.Name("LogoutUser"), object: nil)
+                            }
+                        },
+                        secondaryButton: .cancel()
+                    )
+                }
+                .sheet(isPresented: $showingShareSheet) {
+                    ActivityView(activityItems: ["Join me on Fiesta to reduce food waste! Download now: https://fiesta-app.com"])
+                }
+                .sheet(isPresented: $showingImagePicker) {
+                    ImagePicker(selectedImage: $selectedImage, didSelectImage: uploadProfileImage)
+                }
+                
+                // Loading overlay
+                if dataController.isLoading || isUploadingImage {
+                    Color.black.opacity(0.3)
+                        .ignoresSafeArea()
+                    
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .scaleEffect(1.5)
                 }
             }
-            .listStyle(InsetGroupedListStyle())
-            .navigationTitle("Profile")
-            .alert(isPresented: $showingLogoutAlert) {
-                Alert(
-                    title: Text("Log Out"),
-                    message: Text("Are you sure you want to log out?"),
-                    primaryButton: .destructive(Text("Log Out")) {
-                        // Logout logic
-                        dataController.logout()
-                        
-                        // Find the root ContentView to set isAuthenticated to false
-                        // We need to use NotificationCenter for communication between views
-                        NotificationCenter.default.post(name: Notification.Name("LogoutUser"), object: nil)
-                    },
-                    secondaryButton: .cancel()
-                )
-            }
-            .sheet(isPresented: $showingShareSheet) {
-                ActivityView(activityItems: ["Join me on Fiesta to reduce food waste! Download now: https://fiesta-app.com"])
+        }
+    }
+    
+    private func uploadProfileImage() {
+        guard let image = selectedImage, let userId = dataController.currentUser?.id else {
+            return
+        }
+        
+        isUploadingImage = true
+        
+        // Resize and compress the image
+        guard let imageData = image.jpegData(compressionQuality: 0.7) else {
+            isUploadingImage = false
+            return
+        }
+        
+        Task {
+            do {
+                // Upload the image using SupabaseManager
+                let supabaseManager = SupabaseManager.shared
+                let path = try await supabaseManager.uploadProfileImage(userId: userId, imageData: imageData)
+                
+                // Get the public URL
+                if let imageUrl = supabaseManager.getImageUrl(bucket: "profile_images", path: path)?.absoluteString {
+                    // Update the user's profile image URL
+                    if var user = dataController.currentUser {
+                        user.profileImageURL = imageUrl
+                        await dataController.updateUser(user)
+                    }
+                }
+                
+                isUploadingImage = false
+            } catch {
+                print("Error uploading profile image: \(error.localizedDescription)")
+                isUploadingImage = false
             }
         }
     }
@@ -112,18 +174,35 @@ struct ProfileView: View {
 
 struct ProfileHeaderView: View {
     let user: User
+    var onImageTap: () -> Void
     
     var body: some View {
         VStack {
             // Profile image
             ZStack(alignment: .bottomTrailing) {
                 if let profileImageURL = user.profileImageURL {
-                    Image(profileImageURL)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 100, height: 100)
-                        .clipShape(Circle())
-                        .shadow(radius: 3)
+                    AsyncImage(url: URL(string: profileImageURL)) { phase in
+                        switch phase {
+                        case .empty:
+                            ProgressView()
+                                .frame(width: 100, height: 100)
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 100, height: 100)
+                                .clipShape(Circle())
+                                .shadow(radius: 3)
+                        case .failure:
+                            Image(systemName: "person.crop.circle.fill")
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 100, height: 100)
+                                .foregroundColor(.blue)
+                        @unknown default:
+                            EmptyView()
+                        }
+                    }
                 } else {
                     Image(systemName: "person.circle.fill")
                         .resizable()
@@ -133,11 +212,12 @@ struct ProfileHeaderView: View {
                         .shadow(radius: 3)
                 }
                 
-                Image(systemName: "pencil.circle.fill")
-                    .font(.title)
-                    .foregroundColor(Color("FiestaPrimary"))
-                    .background(Color.white)
-                    .clipShape(Circle())
+                Button(action: onImageTap) {
+                    Image(systemName: "pencil.circle.fill")
+                        .font(.title)
+                        .foregroundColor(Color("FiestaPrimary"))
+                        .background(Circle().fill(Color.white))
+                }
             }
             .padding(.top)
             
@@ -319,6 +399,46 @@ struct ActivityView: UIViewControllerRepresentable {
     }
     
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+struct ImagePicker: UIViewControllerRepresentable {
+    @Binding var selectedImage: UIImage?
+    var didSelectImage: () -> Void
+    @Environment(\.presentationMode) private var presentationMode
+    
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.delegate = context.coordinator
+        picker.allowsEditing = true
+        return picker
+    }
+    
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
+        let parent: ImagePicker
+        
+        init(_ parent: ImagePicker) {
+            self.parent = parent
+        }
+        
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+            if let image = info[.editedImage] as? UIImage {
+                parent.selectedImage = image
+                parent.didSelectImage()
+            }
+            
+            parent.presentationMode.wrappedValue.dismiss()
+        }
+        
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            parent.presentationMode.wrappedValue.dismiss()
+        }
+    }
 }
 
 #Preview {

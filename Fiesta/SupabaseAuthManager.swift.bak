@@ -1,6 +1,5 @@
 import Foundation
 import Supabase
-import Auth
 import SwiftUI
 
 @MainActor
@@ -9,9 +8,6 @@ class SupabaseAuthManager: ObservableObject {
     
     // The real Supabase client
     private let client: SupabaseClient
-    
-    // Type alias for auth state changes
-    private typealias AuthStateStream = AsyncStream<AuthStateChangeEvent>
     
     @Published var currentUser: User?
     @Published var session: Session?
@@ -37,50 +33,41 @@ class SupabaseAuthManager: ObservableObject {
     // MARK: - Auth State Management
     
     private func monitorAuthState() async {
-        // Instead of relying on SDK events or direct session access,
-        // we'll use a simpler approach that should work across versions
-        
-        // Make an initial check for auth state
-        await checkAuthState()
-        
-        // Set up periodic checking
-        startPeriodicAuthCheck()
-    }
-    
-    private func checkAuthState() async {
-        // Try to fetch the current user profile - this will only succeed if authenticated
-        if let userId = getCurrentUserId(), !userId.isEmpty {
-            print("SupabaseAuthManager: Found user ID: \(userId)")
-            self.isAuthenticated = true
-            
-            // If we have a user ID, fetch the profile
-            await fetchUserProfile(userId: userId)
-        } else {
-            print("SupabaseAuthManager: No authenticated user found")
-            self.session = nil
-            self.isAuthenticated = false
-            self.currentUser = nil
-        }
-    }
-    
-    private func getCurrentUserId() -> String? {
-        // Use session if we have it
-        return session?.user.id
-    }
-    
-    private func startPeriodicAuthCheck() {
-        // Create a repeating timer to check auth state
-        let timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            
-            // Check auth on each timer tick
-            Task {
-                await self.checkAuthState()
+        do {
+            // First, check if we have a stored session
+            if let existingSession = try? await client.auth.session {
+                self.session = existingSession
+                self.isAuthenticated = true
+                print("SupabaseAuthManager: Found existing session for \(existingSession.user.email)")
+                
+                // Fetch the user profile to complete setup
+                await fetchUserProfile(userId: existingSession.user.id)
+            } else {
+                print("SupabaseAuthManager: No existing session found")
             }
+            
+            // Listen for future auth changes
+            for await authStateChange in await client.auth.authStateChanges {
+                switch authStateChange.event {
+                case .initialSession, .signedIn:
+                    if let session = authStateChange.session {
+                        print("SupabaseAuthManager: Auth state change - signed in: \(session.user.email)")
+                        self.session = session
+                        self.isAuthenticated = true
+                        await fetchUserProfile(userId: session.user.id)
+                    }
+                case .signedOut, .tokenRefreshFailure:
+                    print("SupabaseAuthManager: Auth state change - signed out")
+                    self.session = nil
+                    self.currentUser = nil
+                    self.isAuthenticated = false
+                default:
+                    break
+                }
+            }
+        } catch {
+            print("SupabaseAuthManager: Error monitoring auth state: \(error.localizedDescription)")
         }
-        
-        // Make sure the timer continues running
-        RunLoop.current.add(timer, forMode: .common)
     }
     
     private func fetchUserProfile(userId: String) async {
@@ -103,10 +90,16 @@ class SupabaseAuthManager: ObservableObject {
             // 1. First directly sign up with Supabase Auth
             print("SupabaseAuthManager: Creating auth user account for \(email)")
             
-        let authResponse = try await client.auth.signUp(
-            email: email,
-            password: password
-        )
+            var options = AuthOptions()
+            options.data = [
+                "name": name
+            ]
+            
+            let authResponse = try await client.auth.signUp(
+                email: email,
+                password: password,
+                options: options
+            )
             
             guard let session = authResponse.session, let authUser = authResponse.user else {
                 throw NSError(domain: "Auth", code: 500, userInfo: [
@@ -157,10 +150,10 @@ class SupabaseAuthManager: ObservableObject {
             print("SupabaseAuthManager: Signing in \(email)")
             
             // 1. Sign in through Supabase Auth
-        let authResponse = try await client.auth.signIn(
-            email: email,
-            password: password
-        )
+            let authResponse = try await client.auth.signInWithPassword(
+                email: email,
+                password: password
+            )
             
             guard let session = authResponse.session else {
                 throw NSError(domain: "Auth", code: 500, userInfo: [
@@ -170,7 +163,7 @@ class SupabaseAuthManager: ObservableObject {
             
             print("SupabaseAuthManager: Sign-in successful: \(session.user.id)")
             self.session = session
-        self.isAuthenticated = true
+            self.isAuthenticated = true
             
             // 2. Get the user profile
             if let profile = try? await SupabaseManager.shared.fetchUserProfile(id: session.user.id) {
@@ -181,7 +174,8 @@ class SupabaseAuthManager: ObservableObject {
                 print("SupabaseAuthManager: Creating missing user profile for \(session.user.id)")
                 
                 // Create and save a new profile
-                let displayName = session.user.email.components(separatedBy: "@").first ?? "User"
+                let displayName = session.user.userMetadata["name"] as? String ?? 
+                                 session.user.email.components(separatedBy: "@").first ?? "User"
                                  
                 let newUser = User(
                     id: session.user.id,
@@ -215,11 +209,11 @@ class SupabaseAuthManager: ObservableObject {
         
         do {
             print("SupabaseAuthManager: Signing out...")
-        try await client.auth.signOut()
+            try await client.auth.signOut()
             
-        self.session = nil
-        self.currentUser = nil
-        self.isAuthenticated = false
+            self.session = nil
+            self.currentUser = nil
+            self.isAuthenticated = false
             print("SupabaseAuthManager: Sign out successful")
             
             isLoading = false
@@ -266,6 +260,8 @@ class SupabaseAuthManager: ObservableObject {
             // The most reliable way to check if an email exists is to 
             // try to sign up with it but with an invalid password
             // If the error says "User already registered", the email exists
+            var options = AuthOptions()
+            options.emailRedirectTo = nil
             
             do {
                 // Try to sign up with a deliberately wrong/short password
@@ -273,7 +269,8 @@ class SupabaseAuthManager: ObservableObject {
                 // email already exists or because of the password
                 _ = try await client.auth.signUp(
                     email: email,
-                    password: "x" // Deliberately incorrect password
+                    password: "x", // Deliberately incorrect password
+                    options: options
                 )
                 
                 // If we get here, the email doesn't exist yet (but the API would

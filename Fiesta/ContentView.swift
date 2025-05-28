@@ -70,10 +70,10 @@ struct ContentView: View {
         isAuthenticated = false
         
         // Force UI refresh
-        DispatchQueue.main.async {
+        Task {
             // This is a backup - dataController already cleared the user
             if dataController.currentUser != nil {
-                dataController.logout()
+                await dataController.logout()
             }
         }
     }
@@ -81,11 +81,13 @@ struct ContentView: View {
     private func handleLogin() {
         // For demo purposes, we'll automatically log in with the first user
         // In a real app, this would validate credentials against a backend
-        if dataController.login(email: email, password: password) {
-            isAuthenticated = true
-        } else {
-            errorMessage = "Invalid email or password"
-            showingError = true
+        Task {
+            if await dataController.login(email: email, password: password) {
+                isAuthenticated = true
+            } else {
+                errorMessage = "Invalid email or password"
+                showingError = true
+            }
         }
     }
 }
@@ -98,6 +100,7 @@ struct LoginView: View {
     @Binding var showingError: Bool
     @Binding var errorMessage: String
     @State private var showingSignup = false
+    @State private var isLoggingIn = false
     let login: () -> Void
     
     var body: some View {
@@ -139,14 +142,20 @@ struct LoginView: View {
                         Button(action: {
                             login()
                         }) {
-                            Text("Log In")
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color("FiestaPrimary"))
-                                .cornerRadius(10)
+                            if isLoggingIn {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            } else {
+                                Text("Log In")
+                                    .fontWeight(.semibold)
+                            }
                         }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color("FiestaPrimary"))
+                        .cornerRadius(10)
+                        .disabled(isLoggingIn)
                         
                         Button(action: {
                             // Use demo credentials
@@ -158,6 +167,7 @@ struct LoginView: View {
                                 .fontWeight(.medium)
                                 .foregroundColor(Color("FiestaPrimary"))
                         }
+                        .disabled(isLoggingIn)
                         
                         HStack {
                             Spacer()
@@ -176,7 +186,7 @@ struct LoginView: View {
                     Spacer()
                     
                     // Create account link
-                    VStack {
+        VStack {
                         Divider()
                             .padding(.vertical)
                         
@@ -228,6 +238,7 @@ struct SignupView: View {
     @State private var alertTitle = ""
     @State private var alertMessage = ""
     @State private var registrationSuccess = false
+    @State private var isRegistering = false
     
     // Binding to notify parent view after successful registration
     var onSignupComplete: (Bool) -> Void
@@ -248,6 +259,7 @@ struct SignupView: View {
                         .background(Color(.systemGray6))
                         .cornerRadius(10)
                         .autocapitalization(.words)
+                        .disabled(isRegistering)
                     
                     TextField("Email", text: $email)
                         .padding()
@@ -255,27 +267,36 @@ struct SignupView: View {
                         .cornerRadius(10)
                         .keyboardType(.emailAddress)
                         .autocapitalization(.none)
+                        .disabled(isRegistering)
                     
                     SecureField("Password", text: $password)
                         .padding()
                         .background(Color(.systemGray6))
                         .cornerRadius(10)
+                        .disabled(isRegistering)
                     
                     SecureField("Confirm Password", text: $confirmPassword)
                         .padding()
                         .background(Color(.systemGray6))
                         .cornerRadius(10)
+                        .disabled(isRegistering)
                     
                     // Signup button
                     Button(action: handleSignup) {
-                        Text("Sign Up")
-                            .fontWeight(.semibold)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color("FiestaPrimary"))
-                            .cornerRadius(10)
+                        if isRegistering {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        } else {
+                            Text("Sign Up")
+                                .fontWeight(.semibold)
+                        }
                     }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color("FiestaPrimary"))
+                    .cornerRadius(10)
+                    .disabled(isRegistering)
                     .padding(.top)
                 }
                 .padding(.horizontal)
@@ -293,8 +314,8 @@ struct SignupView: View {
                 .padding(.top)
                 
                 Spacer()
-            }
-            .padding()
+        }
+        .padding()
         }
         .alert(isPresented: $showingAlert) {
             Alert(
@@ -343,13 +364,29 @@ struct SignupView: View {
         }
         
         // Attempt registration
-        let success = dataController.registerUser(name: name, email: email, password: password)
-        
-        if success {
-            registrationSuccess = true
-            showAlert(title: "Registration Success", message: "Your account has been created successfully!")
-        } else {
-            showAlert(title: "Registration Failed", message: "This email may already be registered.")
+        isRegistering = true
+        Task {
+            do {
+                let success = await dataController.registerUser(name: name, email: email, password: password)
+                
+                // Update UI on the main thread
+                isRegistering = false
+                
+                if success {
+                    registrationSuccess = true
+                    showAlert(title: "Registration Success", message: "Your account has been created successfully!")
+                } else {
+                    // Check if there's a specific error message from the data controller
+                    if let error = dataController.error {
+                        showAlert(title: "Registration Failed", message: error.localizedDescription)
+                    } else {
+                        showAlert(title: "Registration Failed", message: "Unable to create your account. The email may already be registered or there might be a connection issue.")
+                    }
+                }
+            } catch {
+                isRegistering = false
+                showAlert(title: "Registration Failed", message: error.localizedDescription)
+            }
         }
     }
     

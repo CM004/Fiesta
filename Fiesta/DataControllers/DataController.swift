@@ -1,6 +1,8 @@
 import Foundation
 import Combine
+import Supabase
 
+@MainActor
 class DataController: ObservableObject {
     // Published properties for UI binding
     @Published var currentUser: User?
@@ -10,6 +12,8 @@ class DataController: ObservableObject {
     @Published var mealSwaps: [MealSwap] = []
     @Published var predictions: [MealPrediction] = []
     @Published var leaderboard: [User] = []
+    @Published var isLoading: Bool = false
+    @Published var error: Error?
     
     // Store paths for data persistence
     private let usersStorePath = "users.json"
@@ -26,7 +30,18 @@ class DataController: ObservableObject {
         fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
     }
     
+    // Supabase managers
+    private let supabaseAuthManager = SupabaseAuthManager.shared
+    private let supabaseManager = SupabaseManager.shared
+    private var cancellables = Set<AnyCancellable>()
+    
+    // Flag to determine if using backend or local storage
+    private let useBackend = true
+    
     init() {
+        // Set up Supabase auth listener
+        setupSupabaseAuthListener()
+        
         // Try to restore user session first
         restoreUserSession()
         
@@ -34,16 +49,101 @@ class DataController: ObservableObject {
         if currentUser == nil {
             loadData()
         }
+    }
+    
+    private func setupSupabaseAuthListener() {
+        // Listen for auth state changes using Combine
+        supabaseAuthManager.$currentUser
+            .receive(on: RunLoop.main)
+            .sink { [weak self] supabaseUser in
+                guard let self = self else { return }
+                
+                // If we have a user from Supabase
+                if let supabaseUser = supabaseUser {
+                    Task {
+                        await self.syncUserProfile(supabaseUserId: supabaseUser.id)
+                    }
+                } else {
+                    // Logged out
+                    self.currentUser = nil
+                }
+            }
+            .store(in: &cancellables)
+    }
+    
+    // Sync user profile from backend
+    private func syncUserProfile(supabaseUserId: String) async {
+        if useBackend {
+            do {
+                // Fetch user profile from Supabase
+                if let user = try await supabaseManager.fetchUserProfile(id: supabaseUserId) {
+                    // Update the current user
+                    self.currentUser = user
+                    
+                    // Save user session locally
+                    self.saveUserSession()
+                    
+                    // Load user-specific data
+                    await self.loadUserData(userId: supabaseUserId)
+                }
+            } catch {
+                print("Error syncing user profile: \(error.localizedDescription)")
+                self.error = error
+            }
+        } else {
+            // Fallback to local data if backend is disabled
+            if let user = loadUsers().first(where: { $0.id == supabaseUserId }) {
+                self.currentUser = user
+                saveUserSession()
+            }
+        }
+    }
+    
+    // Load all data for a specific user
+    private func loadUserData(userId: String) async {
+        isLoading = true
         
-        // If no data exists, create sample data for testing
-        if availableMeals.isEmpty && currentUser == nil {
-            createSampleData()
+        if useBackend {
+            do {
+                // Fetch meals
+                let allMeals = try await supabaseManager.fetchMeals()
+                self.availableMeals = allMeals.filter { $0.status == .available }
+                self.offeredMeals = try await supabaseManager.fetchOfferedMeals(by: userId)
+                self.claimedMeals = try await supabaseManager.fetchClaimedMeals(by: userId)
+                
+                // Fetch swaps
+                self.mealSwaps = try await supabaseManager.fetchMealSwaps(for: userId)
+                
+                // Fetch predictions
+                self.predictions = try await supabaseManager.fetchPredictions()
+                
+                // Fetch leaderboard
+                self.leaderboard = try await supabaseManager.fetchAllUserProfiles()
+                
+                isLoading = false
+            } catch {
+                print("Error loading user data: \(error.localizedDescription)")
+                self.error = error
+                isLoading = false
+            }
+        } else {
+            // Use local data
+            refreshMealLists()
+            self.mealSwaps = loadMealSwaps()
+            self.predictions = loadPredictions()
+            self.leaderboard = loadUsers().sorted { $0.cqScore > $1.cqScore }
         }
     }
     
     // Public method to refresh data
     func refreshData() {
-        loadData()
+        if useBackend && currentUser != nil {
+            Task {
+                await loadUserData(userId: currentUser!.id)
+            }
+        } else {
+            loadData()
+        }
     }
     
     // MARK: - User Session Management
@@ -51,20 +151,28 @@ class DataController: ObservableObject {
     private func restoreUserSession() {
         // Check if we have a saved user ID
         if let userId = UserDefaults.standard.string(forKey: currentUserIdKey) {
-            let users = loadUsers()
-            if let savedUser = users.first(where: { $0.id == userId }) {
-                self.currentUser = savedUser
-                
-                // Load other data related to this user
-                let allMeals = loadMeals()
-                self.availableMeals = allMeals.filter { $0.status == .available }
-                self.offeredMeals = allMeals.filter { $0.status == .offered && $0.offeredBy == currentUser?.id }
-                self.claimedMeals = allMeals.filter { $0.status == .claimed && $0.claimedBy == currentUser?.id }
-                self.mealSwaps = loadMealSwaps()
-                self.predictions = loadPredictions()
-                self.leaderboard = users.sorted { $0.cqScore > $1.cqScore }
-                
-                print("Restored session for user: \(savedUser.name)")
+            if useBackend {
+                // If using backend, we'll sync with Supabase
+                Task {
+                    await syncUserProfile(supabaseUserId: userId)
+                }
+            } else {
+                // Otherwise use local data
+                let users = loadUsers()
+                if let savedUser = users.first(where: { $0.id == userId }) {
+                    self.currentUser = savedUser
+                    
+                    // Load other data related to this user
+                    let allMeals = loadMeals()
+                    self.availableMeals = allMeals.filter { $0.status == .available }
+                    self.offeredMeals = allMeals.filter { $0.status == .offered && $0.offeredBy == currentUser?.id }
+                    self.claimedMeals = allMeals.filter { $0.status == .claimed && $0.claimedBy == currentUser?.id }
+                    self.mealSwaps = loadMealSwaps()
+                    self.predictions = loadPredictions()
+                    self.leaderboard = users.sorted { $0.cqScore > $1.cqScore }
+                    
+                    print("Restored session for user: \(savedUser.name)")
+                }
             }
         }
     }
@@ -81,18 +189,44 @@ class DataController: ObservableObject {
     
     // MARK: - User Methods
     
-    func login(email: String, password: String) -> Bool {
-        // In a real app, this would authenticate with a server
-        // For now, just simulate login with sample data
-        if let user = loadUsers().first(where: { $0.email == email }) {
-            self.currentUser = user
-            saveUserSession()
-            return true
+    func login(email: String, password: String) async -> Bool {
+        do {
+            isLoading = true
+            
+            // Try to sign in with Supabase
+            try await supabaseAuthManager.signIn(email: email, password: password)
+            
+            // The auth listener will handle syncing the user profile
+            isLoading = false
+            return supabaseAuthManager.isAuthenticated
+        } catch {
+            isLoading = false
+            print("Login error: \(error.localizedDescription)")
+            self.error = error
+            
+            if !useBackend {
+                // Fallback to local login for development
+                if let user = loadUsers().first(where: { $0.email == email }) {
+                    self.currentUser = user
+                    saveUserSession()
+                    return true
+                }
+            }
+            return false
         }
-        return false
     }
     
-    func logout() {
+    func logout() async {
+        isLoading = true
+        
+        // Try to sign out from Supabase
+        do {
+            try await supabaseAuthManager.signOut()
+        } catch {
+            print("Supabase signout error: \(error.localizedDescription)")
+            self.error = error
+        }
+        
         // Reset user state when logging out
         self.currentUser = nil
         
@@ -105,65 +239,109 @@ class DataController: ObservableObject {
         
         // Refresh available meals to show general meals only
         refreshMealLists()
+        
+        isLoading = false
     }
     
-    func registerUser(name: String, email: String, password: String) -> Bool {
-        // In a real app, this would validate email format, password strength, etc.
-        // and communicate with a backend server
-        
-        // Check if user already exists
-        let users = loadUsers()
-        if users.contains(where: { $0.email == email }) {
-            return false // Email already registered
+    func registerUser(name: String, email: String, password: String) async -> Bool {
+        do {
+            isLoading = true
+            self.error = nil
+            
+            print("DataController: Starting registration for \(name) (\(email))")
+            
+            // Attempt to register with Supabase
+            try await supabaseAuthManager.signUp(email: email, password: password, name: name)
+            
+            // If we get here without an error, the registration was successful
+            if supabaseAuthManager.isAuthenticated {
+                print("DataController: Registration successful - user is authenticated")
+                // Refresh user data
+                if let userId = supabaseAuthManager.currentUser?.id {
+                    print("DataController: Loading user data for new user: \(userId)")
+                    await loadUserData(userId: userId)
+                }
+                isLoading = false
+                return true
+            } else {
+                print("DataController: Registration completed but user is not authenticated")
+                isLoading = false
+                self.error = NSError(domain: "DataController", code: 401, userInfo: [
+                    NSLocalizedDescriptionKey: "Registration completed but user is not authenticated. Try signing in directly."
+                ])
+                return false
+            }
+        } catch {
+            isLoading = false
+            
+            // Provide better error messages based on the error
+            let errorMessage: String
+            if let nsError = error as NSError? {
+                if nsError.localizedDescription.contains("already") || nsError.localizedDescription.contains("registered") {
+                    errorMessage = "This email is already registered. Please try signing in instead."
+                } else if nsError.localizedDescription.contains("network") {
+                    errorMessage = "Network error. Please check your internet connection and try again."
+                } else {
+                    errorMessage = "Registration failed: \(nsError.localizedDescription)"
+                }
+            } else {
+                errorMessage = "Registration failed. Please try again."
+            }
+            
+            print("DataController: Registration error - \(errorMessage)")
+            self.error = NSError(domain: "DataController", code: 400, userInfo: [
+                NSLocalizedDescriptionKey: errorMessage
+            ])
+            
+            return false
         }
-        
-        // Create new user
-        let newUser = User(
-            id: UUID().uuidString,
-            name: name,
-            email: email,
-            role: .student, // Default to student role
-            cqScore: 0.0,   // Start with zero score
-            createdAt: Date(),
-            isActive: true,
-            mealsSaved: 0,
-            mealsSwapped: 0,
-            mealsDistributed: 0
-        )
-        
-        // Save the user
-        var updatedUsers = users
-        updatedUsers.append(newUser)
-        saveUsers(updatedUsers)
-        
-        // Set as current user - auto login after registration
-        self.currentUser = newUser
-        saveUserSession()
-        
-        updateLeaderboard() // Update leaderboard to include the new user
-        
-        return true
     }
     
-    func updateUser(_ user: User) {
-        guard let index = loadUsers().firstIndex(where: { $0.id == user.id }) else {
-            return
+    func updateUser(_ user: User) async {
+        if useBackend {
+            do {
+                isLoading = true
+                
+                // Update user in Supabase
+                try await supabaseManager.upsertUserProfile(user: user)
+                
+                // Update local state
+                if user.id == currentUser?.id {
+                    self.currentUser = user
+                }
+                
+                // Update leaderboard
+                if let index = self.leaderboard.firstIndex(where: { $0.id == user.id }) {
+                    self.leaderboard[index] = user
+                }
+                
+                isLoading = false
+            } catch {
+                isLoading = false
+                print("Error updating user: \(error.localizedDescription)")
+                self.error = error
+            }
+        } else {
+            // Local storage fallback
+            guard let index = loadUsers().firstIndex(where: { $0.id == user.id }) else {
+                return
+            }
+            
+            var users = loadUsers()
+            users[index] = user
+            
+            if user.id == currentUser?.id {
+                currentUser = user
+            }
+            
+            saveUsers(users)
+            updateLeaderboard()
         }
-        
-        var users = loadUsers()
-        users[index] = user
-        
-        if user.id == currentUser?.id {
-            currentUser = user
-        }
-        
-        saveUsers(users)
-        updateLeaderboard()
     }
     
     // MARK: - Meal Methods
     
-    func offerMeal(_ meal: Meal) -> Bool {
+    func offerMeal(_ meal: Meal) async -> Bool {
         guard currentUser != nil else { return false }
         
         var updatedMeal = meal
@@ -179,8 +357,8 @@ class DataController: ObservableObject {
         )
         
         // Save meal and swap
-        updateMeal(updatedMeal)
-        saveMealSwap(swap)
+        await updateMeal(updatedMeal)
+        await saveMealSwap(swap)
         
         // Update current user stats
         if let user = currentUser {
@@ -196,13 +374,13 @@ class DataController: ObservableObject {
                 mealsSwapped: user.mealsSwapped + 1,
                 mealsDistributed: user.mealsDistributed
             )
-            updateUser(updatedUser)
+            await updateUser(updatedUser)
         }
         
         return true
     }
     
-    func claimMeal(_ meal: Meal) -> Bool {
+    func claimMeal(_ meal: Meal) async -> Bool {
         guard let userId = currentUser?.id else { return false }
         guard meal.status == .offered else { return false }
         
@@ -218,10 +396,10 @@ class DataController: ObservableObject {
             swap.status = .completed
             swap.cqPointsEarned = 1.0
             
-            updateMealSwap(swap)
+            await updateMealSwap(swap)
         }
         
-        updateMeal(updatedMeal)
+        await updateMeal(updatedMeal)
         
         // Update current user stats
         if let user = currentUser {
@@ -237,19 +415,19 @@ class DataController: ObservableObject {
                 mealsSwapped: user.mealsSwapped,
                 mealsDistributed: user.mealsDistributed + 1
             )
-            updateUser(updatedUser)
+            await updateUser(updatedUser)
         }
         
         return true
     }
     
-    func confirmMealConsumption(_ meal: Meal, wasConsumed: Bool) {
+    func confirmMealConsumption(_ meal: Meal, wasConsumed: Bool) async {
         var updatedMeal = meal
         updatedMeal.actuallyConsumed = wasConsumed
         updatedMeal.status = wasConsumed ? .consumed : .unclaimed
         updatedMeal.feedbackProvided = true
         
-        updateMeal(updatedMeal)
+        await updateMeal(updatedMeal)
         
         // Update CQ score based on feedback
         if let user = currentUser, wasConsumed {
@@ -265,21 +443,39 @@ class DataController: ObservableObject {
                 mealsSwapped: user.mealsSwapped,
                 mealsDistributed: user.mealsDistributed
             )
-            updateUser(updatedUser)
+            await updateUser(updatedUser)
         }
     }
     
-    func updateMeal(_ meal: Meal) {
-        var meals = loadMeals()
-        
-        if let index = meals.firstIndex(where: { $0.id == meal.id }) {
-            meals[index] = meal
+    func updateMeal(_ meal: Meal) async {
+        if useBackend {
+            do {
+                isLoading = true
+                try await supabaseManager.upsertMeal(meal)
+                
+                // Refresh meal lists
+                if let userId = currentUser?.id {
+                    await loadUserData(userId: userId)
+                }
+                
+                isLoading = false
+            } catch {
+                isLoading = false
+                print("Error updating meal: \(error.localizedDescription)")
+                self.error = error
+            }
         } else {
-            meals.append(meal)
+            var meals = loadMeals()
+            
+            if let index = meals.firstIndex(where: { $0.id == meal.id }) {
+                meals[index] = meal
+            } else {
+                meals.append(meal)
+            }
+            
+            saveMeals(meals)
+            refreshMealLists()
         }
-        
-        saveMeals(meals)
-        refreshMealLists()
     }
     
     // MARK: - Prediction Methods
@@ -291,39 +487,92 @@ class DataController: ObservableObject {
         }
     }
     
-    func savePrediction(_ prediction: MealPrediction) {
-        var predictions = loadPredictions()
-        
-        if let index = predictions.firstIndex(where: { $0.id == prediction.id }) {
-            predictions[index] = prediction
+    func savePrediction(_ prediction: MealPrediction) async {
+        if useBackend {
+            do {
+                isLoading = true
+                try await supabaseManager.upsertPrediction(prediction)
+                
+                // Refresh predictions
+                let updatedPredictions = try await supabaseManager.fetchPredictions()
+                self.predictions = updatedPredictions
+                
+                isLoading = false
+            } catch {
+                isLoading = false
+                print("Error saving prediction: \(error.localizedDescription)")
+                self.error = error
+            }
         } else {
-            predictions.append(prediction)
+            var predictions = loadPredictions()
+            
+            if let index = predictions.firstIndex(where: { $0.id == prediction.id }) {
+                predictions[index] = prediction
+            } else {
+                predictions.append(prediction)
+            }
+            
+            savePredictions(predictions)
+            self.predictions = predictions
         }
-        
-        savePredictions(predictions)
-        self.predictions = predictions
     }
     
     // MARK: - Swap Methods
     
-    func updateMealSwap(_ swap: MealSwap) {
-        var swaps = loadMealSwaps()
-        
-        if let index = swaps.firstIndex(where: { $0.id == swap.id }) {
-            swaps[index] = swap
+    func updateMealSwap(_ swap: MealSwap) async {
+        if useBackend {
+            do {
+                isLoading = true
+                try await supabaseManager.upsertMealSwap(swap)
+                
+                // Refresh swaps
+                if let userId = currentUser?.id {
+                    self.mealSwaps = try await supabaseManager.fetchMealSwaps(for: userId)
+                }
+                
+                isLoading = false
+            } catch {
+                isLoading = false
+                print("Error updating meal swap: \(error.localizedDescription)")
+                self.error = error
+            }
         } else {
-            swaps.append(swap)
+            var swaps = loadMealSwaps()
+            
+            if let index = swaps.firstIndex(where: { $0.id == swap.id }) {
+                swaps[index] = swap
+            } else {
+                swaps.append(swap)
+            }
+            
+            saveMealSwaps(swaps)
+            self.mealSwaps = swaps
         }
-        
-        saveMealSwaps(swaps)
-        self.mealSwaps = swaps
     }
     
-    func saveMealSwap(_ swap: MealSwap) {
-        var swaps = loadMealSwaps()
-        swaps.append(swap)
-        saveMealSwaps(swaps)
-        self.mealSwaps = swaps
+    func saveMealSwap(_ swap: MealSwap) async {
+        if useBackend {
+            do {
+                isLoading = true
+                try await supabaseManager.upsertMealSwap(swap)
+                
+                // Refresh swaps
+                if let userId = currentUser?.id {
+                    self.mealSwaps = try await supabaseManager.fetchMealSwaps(for: userId)
+                }
+                
+                isLoading = false
+            } catch {
+                isLoading = false
+                print("Error saving meal swap: \(error.localizedDescription)")
+                self.error = error
+            }
+        } else {
+            var swaps = loadMealSwaps()
+            swaps.append(swap)
+            saveMealSwaps(swaps)
+            self.mealSwaps = swaps
+        }
     }
     
     // MARK: - Leaderboard
@@ -634,3 +883,4 @@ class DataController: ObservableObject {
         updateLeaderboard()
     }
 } 
+ 

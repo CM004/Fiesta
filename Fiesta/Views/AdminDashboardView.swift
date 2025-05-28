@@ -132,7 +132,9 @@ struct AdminDashboardView: View {
                                     location: selectedLocation
                                 )
                                 
-                                dataController.savePrediction(newPrediction)
+                                Task {
+                                    await dataController.savePrediction(newPrediction)
+                                }
                                 selectedPrediction = newPrediction
                             }) {
                                 Text("Generate Prediction")
@@ -181,7 +183,9 @@ struct AdminDashboardView: View {
                                 prediction.predictedAttendance * 130 / 100 : // 30% increase
                                 prediction.predictedAttendance * 100 / 130 // revert back
                             
-                            dataController.savePrediction(updatedPrediction)
+                            Task {
+                                await dataController.savePrediction(updatedPrediction)
+                            }
                             selectedPrediction = updatedPrediction
                         }
                     }
@@ -704,7 +708,9 @@ struct PredictionDetailView: View {
                         updatedPrediction.wasteReduction = adjustedPreparation < prediction.predictedAttendance ? 
                             prediction.predictedAttendance - adjustedPreparation : nil
                         
-                        dataController.savePrediction(updatedPrediction)
+                        Task {
+                            await dataController.savePrediction(updatedPrediction)
+                        }
                         showingSaveConfirmation = true
                     }) {
                         Text("Save Adjustments")

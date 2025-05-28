@@ -168,13 +168,17 @@ struct SwapView: View {
                             if let meal = currentMeal {
                                 if swipeAction == .offer {
                                     // Offer meal logic
-                                    if dataController.offerMeal(meal) {
-                                        handleSuccess()
+                                    Task {
+                                        if await dataController.offerMeal(meal) {
+                                            handleSuccess()
+                                        }
                                     }
                                 } else {
                                     // Claim meal logic
-                                    if dataController.claimMeal(meal) {
-                                        showingClaimSuccess = true
+                                    Task {
+                                        if await dataController.claimMeal(meal) {
+                                            showingClaimSuccess = true
+                                        }
                                     }
                                 }
                             }
@@ -317,7 +321,9 @@ struct SwapView: View {
         
         // Add these meals to the data controller
         for meal in sampleOfferedMeals {
-            dataController.updateMeal(meal)
+            Task {
+                await dataController.updateMeal(meal)
+            }
         }
         
         // Create swap records for these meals
@@ -327,7 +333,9 @@ struct SwapView: View {
                 offeredBy: meal.offeredBy!,
                 expiresAt: meal.offerExpiryTime ?? Date().addingTimeInterval(3600)
             )
-            dataController.saveMealSwap(swap)
+            Task {
+                await dataController.saveMealSwap(swap)
+            }
         }
         
         print("Created \(sampleOfferedMeals.count) sample meals for claiming")
