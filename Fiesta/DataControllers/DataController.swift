@@ -87,6 +87,10 @@ class DataController: ObservableObject {
         if let user = loadUsers().first(where: { $0.email == email }) {
             self.currentUser = user
             saveUserSession()
+            
+            // Post notification for user login
+            NotificationCenter.default.post(name: NSNotification.Name("UserLoggedIn"), object: nil)
+            
             return true
         }
         return false

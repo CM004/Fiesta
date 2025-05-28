@@ -198,13 +198,33 @@ struct SwapView: View {
                                     // Offer meal logic
                                     if dataController.offerMeal(meal) {
                                         offerSuccess = true
-                                        handleSuccess()
+                                        // Remove the current card immediately rather than waiting for handleSuccess
+                                        if currentIndex < meals.count {
+                                            meals.remove(at: currentIndex)
+                                            // If no more meals, reload with sample data after overlay disappears
+                                            if meals.isEmpty {
+                                                DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) {
+                                                    createSampleAvailableMeals()
+                                                    loadMeals()
+                                                }
+                                            }
+                                        }
                                     }
                                 } else {
                                     // Claim meal logic
                                     if dataController.claimMeal(meal) {
                                         showingClaimSuccess = true
-                                        handleSuccess()
+                                        // Remove the current card immediately
+                                        if currentIndex < meals.count {
+                                            meals.remove(at: currentIndex)
+                                            // If no more meals, reload with sample data after claim view dismisses
+                                            if meals.isEmpty {
+                                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                                    createSampleOfferedMeals()
+                                                    loadMeals()
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -502,18 +522,15 @@ struct SwapView: View {
     }
     
     private func handleReject(_ meal: Meal) {
-        // Just move to next card for now
+        // For rejections, we still want to go to the next card without removing any
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             nextCard()
         }
     }
     
     private func handleSuccess() {
-        // Handle success animations or feedback
-        // Go to the next card
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            nextCard()
-        }
+        // No need to call nextCard() as we've already removed the card
+        // Just make sure all animations and transitions are complete
     }
     
     private func nextCard() {

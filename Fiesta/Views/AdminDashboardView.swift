@@ -294,7 +294,7 @@ struct AdminDashboardView: View {
                     }
                     .padding(.top)
                 }
-                .navigationTitle("SmartPredict Dashboard")
+                .navigationTitle("Dashboard")
                 .toolbar {
                     ToolbarItem(placement: .navigationBarTrailing) {
                         Button(action: {

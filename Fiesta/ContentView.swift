@@ -83,6 +83,11 @@ struct ContentView: View {
         // In a real app, this would validate credentials against a backend
         if dataController.login(email: email, password: password) {
             isAuthenticated = true
+            
+            // Post additional notification for main view to update
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                NotificationCenter.default.post(name: NSNotification.Name("UserLoggedIn"), object: nil)
+            }
         } else {
             errorMessage = "Invalid email or password"
             showingError = true
