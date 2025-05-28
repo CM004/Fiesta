@@ -193,25 +193,26 @@ class DataController: ObservableObject {
         do {
             isLoading = true
             
-            // Try to sign in with Supabase
-            try await supabaseAuthManager.signIn(email: email, password: password)
+            // Use LocalAuthManager instead of Supabase
+            try await LocalAuthManager.shared.signIn(email: email, password: password)
             
-            // The auth listener will handle syncing the user profile
-            isLoading = false
-            return supabaseAuthManager.isAuthenticated
+            // Get the current user from LocalAuthManager
+            if let user = LocalAuthManager.shared.currentUser {
+                self.currentUser = user
+                
+                // Load other user data
+                await loadUserData(userId: user.id)
+                
+                isLoading = false
+                return true
+            } else {
+                isLoading = false
+                return false
+            }
         } catch {
             isLoading = false
             print("Login error: \(error.localizedDescription)")
             self.error = error
-            
-            if !useBackend {
-                // Fallback to local login for development
-                if let user = loadUsers().first(where: { $0.email == email }) {
-                    self.currentUser = user
-                    saveUserSession()
-                    return true
-                }
-            }
             return false
         }
     }
@@ -219,26 +220,15 @@ class DataController: ObservableObject {
     func logout() async {
         isLoading = true
         
-        // Try to sign out from Supabase
-        do {
-            try await supabaseAuthManager.signOut()
-        } catch {
-            print("Supabase signout error: \(error.localizedDescription)")
-            self.error = error
-        }
+        // Use LocalAuthManager for logout
+        LocalAuthManager.shared.signOut()
         
-        // Reset user state when logging out
+        // Clear local data
         self.currentUser = nil
-        
-        // Clear the saved user session
-        UserDefaults.standard.removeObject(forKey: currentUserIdKey)
-        
-        // Optionally clear any user-specific cached data
-        self.claimedMeals = []
+        self.availableMeals = []
         self.offeredMeals = []
-        
-        // Refresh available meals to show general meals only
-        refreshMealLists()
+        self.claimedMeals = []
+        self.mealSwaps = []
         
         isLoading = false
     }
@@ -246,97 +236,37 @@ class DataController: ObservableObject {
     func registerUser(name: String, email: String, password: String) async -> Bool {
         do {
             isLoading = true
-            self.error = nil
             
-            print("DataController: Starting registration for \(name) (\(email))")
+            // Use LocalAuthManager for signup
+            try await LocalAuthManager.shared.signUp(name: name, email: email, password: password)
             
-            // Attempt to register with Supabase
-            try await supabaseAuthManager.signUp(email: email, password: password, name: name)
-            
-            // If we get here without an error, the registration was successful
-            if supabaseAuthManager.isAuthenticated {
-                print("DataController: Registration successful - user is authenticated")
-                // Refresh user data
-                if let userId = supabaseAuthManager.currentUser?.id {
-                    print("DataController: Loading user data for new user: \(userId)")
-                    await loadUserData(userId: userId)
-                }
+            // Get the current user from LocalAuthManager
+            if let user = LocalAuthManager.shared.currentUser {
+                self.currentUser = user
+                
+                // Load other user data
+                await loadUserData(userId: user.id)
+                
                 isLoading = false
                 return true
             } else {
-                print("DataController: Registration completed but user is not authenticated")
                 isLoading = false
-                self.error = NSError(domain: "DataController", code: 401, userInfo: [
-                    NSLocalizedDescriptionKey: "Registration completed but user is not authenticated. Try signing in directly."
-                ])
                 return false
             }
         } catch {
             isLoading = false
-            
-            // Provide better error messages based on the error
-            let errorMessage: String
-            if let nsError = error as NSError? {
-                if nsError.localizedDescription.contains("already") || nsError.localizedDescription.contains("registered") {
-                    errorMessage = "This email is already registered. Please try signing in instead."
-                } else if nsError.localizedDescription.contains("network") {
-                    errorMessage = "Network error. Please check your internet connection and try again."
-                } else {
-                    errorMessage = "Registration failed: \(nsError.localizedDescription)"
-                }
-            } else {
-                errorMessage = "Registration failed. Please try again."
-            }
-            
-            print("DataController: Registration error - \(errorMessage)")
-            self.error = NSError(domain: "DataController", code: 400, userInfo: [
-                NSLocalizedDescriptionKey: errorMessage
-            ])
-            
+            print("Registration error: \(error.localizedDescription)")
+            self.error = error
             return false
         }
     }
     
     func updateUser(_ user: User) async {
-        if useBackend {
-            do {
-                isLoading = true
-                
-                // Update user in Supabase
-                try await supabaseManager.upsertUserProfile(user: user)
-                
-                // Update local state
-                if user.id == currentUser?.id {
-                    self.currentUser = user
-                }
-                
-                // Update leaderboard
-                if let index = self.leaderboard.firstIndex(where: { $0.id == user.id }) {
-                    self.leaderboard[index] = user
-                }
-                
-                isLoading = false
-            } catch {
-                isLoading = false
-                print("Error updating user: \(error.localizedDescription)")
-                self.error = error
-            }
-        } else {
-            // Local storage fallback
-            guard let index = loadUsers().firstIndex(where: { $0.id == user.id }) else {
-                return
-            }
-            
-            var users = loadUsers()
-            users[index] = user
-            
-            if user.id == currentUser?.id {
-                currentUser = user
-            }
-            
-            saveUsers(users)
-            updateLeaderboard()
-        }
+        // Update user via LocalAuthManager
+        LocalAuthManager.shared.updateUserProfile(user: user)
+        
+        // Update local reference
+        self.currentUser = user
     }
     
     // MARK: - Meal Methods

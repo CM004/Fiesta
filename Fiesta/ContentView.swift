@@ -101,6 +101,7 @@ struct LoginView: View {
     @Binding var errorMessage: String
     @State private var showingSignup = false
     @State private var isLoggingIn = false
+    @State private var showingDiagnostics = false
     let login: () -> Void
     
     var body: some View {
@@ -203,12 +204,14 @@ struct LoginView: View {
                             }
                         }
                     }
+                    .padding(.bottom, 50)
                 }
                 .padding()
             }
+            .navigationBarHidden(true)
             .alert(isPresented: $showingError) {
                 Alert(
-                    title: Text("Login Failed"),
+                    title: Text("Login Error"),
                     message: Text(errorMessage),
                     dismissButton: .default(Text("OK"))
                 )
@@ -219,7 +222,10 @@ struct LoginView: View {
                         isAuthenticated = true
                     }
                 })
-                .environmentObject(dataController)
+                    .environmentObject(dataController)
+            }
+            .sheet(isPresented: $showingDiagnostics) {
+                SupabaseDiagnosticsView()
             }
         }
     }
@@ -370,22 +376,21 @@ struct SignupView: View {
                 let success = await dataController.registerUser(name: name, email: email, password: password)
                 
                 // Update UI on the main thread
-                isRegistering = false
-                
-                if success {
-                    registrationSuccess = true
-                    showAlert(title: "Registration Success", message: "Your account has been created successfully!")
-                } else {
-                    // Check if there's a specific error message from the data controller
-                    if let error = dataController.error {
-                        showAlert(title: "Registration Failed", message: error.localizedDescription)
+                DispatchQueue.main.async {
+                    isRegistering = false
+                    
+                    if success {
+                        registrationSuccess = true
+                        showAlert(title: "Registration Success", message: "Your account has been created successfully!")
                     } else {
-                        showAlert(title: "Registration Failed", message: "Unable to create your account. The email may already be registered or there might be a connection issue.")
+                        // Check if there's a specific error message from the data controller
+                        if let error = dataController.error {
+                            showAlert(title: "Registration Failed", message: error.localizedDescription)
+                        } else {
+                            showAlert(title: "Registration Failed", message: "Unable to create your account. The email may already be registered.")
+                        }
                     }
                 }
-            } catch {
-                isRegistering = false
-                showAlert(title: "Registration Failed", message: error.localizedDescription)
             }
         }
     }

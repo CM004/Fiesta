@@ -7,9 +7,6 @@ struct ProfileView: View {
     @State private var locationServicesEnabled = true
     @State private var showingShareSheet = false
     @State private var darkModeEnabled = false
-    @State private var selectedImage: UIImage?
-    @State private var showingImagePicker = false
-    @State private var isUploadingImage = false
     
     var body: some View {
         NavigationView {
@@ -17,9 +14,7 @@ struct ProfileView: View {
                 List {
                     // Profile Header
                     if let user = dataController.currentUser {
-                        ProfileHeaderView(user: user, onImageTap: {
-                            showingImagePicker = true
-                        })
+                        ProfileHeaderView(user: user)
                         .listRowSeparator(.hidden)
                         .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 10, trailing: 0))
                     }
@@ -118,12 +113,9 @@ struct ProfileView: View {
                 .sheet(isPresented: $showingShareSheet) {
                     ActivityView(activityItems: ["Join me on Fiesta to reduce food waste! Download now: https://fiesta-app.com"])
                 }
-                .sheet(isPresented: $showingImagePicker) {
-                    ImagePicker(selectedImage: $selectedImage, didSelectImage: uploadProfileImage)
-                }
                 
                 // Loading overlay
-                if dataController.isLoading || isUploadingImage {
+                if dataController.isLoading {
                     Color.black.opacity(0.3)
                         .ignoresSafeArea()
                     
@@ -134,140 +126,51 @@ struct ProfileView: View {
             }
         }
     }
-    
-    private func uploadProfileImage() {
-        guard let image = selectedImage, let userId = dataController.currentUser?.id else {
-            return
-        }
-        
-        isUploadingImage = true
-        
-        // Resize and compress the image
-        guard let imageData = image.jpegData(compressionQuality: 0.7) else {
-            isUploadingImage = false
-            return
-        }
-        
-        Task {
-            do {
-                // Upload the image using SupabaseManager
-                let supabaseManager = SupabaseManager.shared
-                let path = try await supabaseManager.uploadProfileImage(userId: userId, imageData: imageData)
-                
-                // Get the public URL
-                if let imageUrl = supabaseManager.getImageUrl(bucket: "profile_images", path: path)?.absoluteString {
-                    // Update the user's profile image URL
-                    if var user = dataController.currentUser {
-                        user.profileImageURL = imageUrl
-                        await dataController.updateUser(user)
-                    }
-                }
-                
-                isUploadingImage = false
-            } catch {
-                print("Error uploading profile image: \(error.localizedDescription)")
-                isUploadingImage = false
-            }
-        }
-    }
 }
 
 struct ProfileHeaderView: View {
     let user: User
-    var onImageTap: () -> Void
     
     var body: some View {
         VStack {
             // Profile image
-            ZStack(alignment: .bottomTrailing) {
-                if let profileImageURL = user.profileImageURL {
-                    AsyncImage(url: URL(string: profileImageURL)) { phase in
-                        switch phase {
-                        case .empty:
-                            ProgressView()
-                                .frame(width: 100, height: 100)
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 100, height: 100)
-                                .clipShape(Circle())
-                                .shadow(radius: 3)
-                        case .failure:
-                            Image(systemName: "person.crop.circle.fill")
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 100, height: 100)
-                                .foregroundColor(.blue)
-                        @unknown default:
-                            EmptyView()
-                        }
-                    }
-                } else {
-                    Image(systemName: "person.circle.fill")
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 100, height: 100)
-                        .foregroundColor(.blue)
-                        .shadow(radius: 3)
-                }
-                
-                Button(action: onImageTap) {
-                    Image(systemName: "pencil.circle.fill")
-                        .font(.title)
-                        .foregroundColor(Color("FiestaPrimary"))
-                        .background(Circle().fill(Color.white))
-                }
-            }
-            .padding(.top)
+            Image(systemName: "person.crop.circle.fill")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 100, height: 100)
+                .foregroundColor(Color("FiestaPrimary"))
+                .padding(.bottom, 10)
             
             // User info
             Text(user.name)
-                .font(.title2)
+                .font(.title)
                 .fontWeight(.bold)
-                .padding(.top, 5)
             
             Text(user.email)
                 .font(.subheadline)
                 .foregroundColor(.gray)
             
-            // User role
+            // Role badge
             Text(user.role.rawValue.capitalized)
                 .font(.caption)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
                 .background(
                     user.role == .admin ? Color.purple.opacity(0.2) :
                     user.role == .cafeteriaStaff ? Color.orange.opacity(0.2) :
-                    Color.blue.opacity(0.2)
+                    Color.green.opacity(0.2)
                 )
                 .foregroundColor(
                     user.role == .admin ? .purple :
                     user.role == .cafeteriaStaff ? .orange :
-                    .blue
+                    .green
                 )
                 .cornerRadius(20)
-                .padding(.top, 2)
-            
-            // Badges
-            HStack(spacing: 15) {
-                if user.mealsSaved >= 10 {
-                    Badge(title: "Green Saver", color: .green, icon: "leaf.fill")
-                }
-                
-                if user.mealsSwapped >= 15 {
-                    Badge(title: "Super Swapper", color: .blue, icon: "arrow.triangle.swap")
-                }
-                
-                if user.mealsDistributed >= 5 {
-                    Badge(title: "Distributor", color: .orange, icon: "hand.thumbsup.fill")
-                }
-            }
-            .padding(.top)
-            .padding(.bottom)
+                .padding(.top, 5)
         }
         .frame(maxWidth: .infinity)
-        .background(Color(.systemGroupedBackground))
+        .padding()
+        .background(Color(.systemBackground))
     }
 }
 
@@ -399,46 +302,6 @@ struct ActivityView: UIViewControllerRepresentable {
     }
     
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
-}
-
-struct ImagePicker: UIViewControllerRepresentable {
-    @Binding var selectedImage: UIImage?
-    var didSelectImage: () -> Void
-    @Environment(\.presentationMode) private var presentationMode
-    
-    func makeUIViewController(context: Context) -> UIImagePickerController {
-        let picker = UIImagePickerController()
-        picker.delegate = context.coordinator
-        picker.allowsEditing = true
-        return picker
-    }
-    
-    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
-    
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-    
-    class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
-        let parent: ImagePicker
-        
-        init(_ parent: ImagePicker) {
-            self.parent = parent
-        }
-        
-        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-            if let image = info[.editedImage] as? UIImage {
-                parent.selectedImage = image
-                parent.didSelectImage()
-            }
-            
-            parent.presentationMode.wrappedValue.dismiss()
-        }
-        
-        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            parent.presentationMode.wrappedValue.dismiss()
-        }
-    }
 }
 
 #Preview {
