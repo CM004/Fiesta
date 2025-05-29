@@ -412,22 +412,22 @@ struct SwapView: View {
                  location: "Snack Corner",
                  nutritionInfo: NutritionInfo(calories: 120, protein: 2.0, carbs: 28.0, fat: 0.5, allergens: [], dietaryInfo: ["Vegan", "Vegetarian"])),
                  
-            // New meal with placeholder image
+            // Update to use correct image asset with exact name
             Meal(id: "sample-available3", 
                  name: "Spinach Quiche", 
                  description: "Savory spinach and cheese quiche with flaky crust", 
-                 imageURL: "vegetable_soup", // Placeholder asset
+                 imageURL: "spinach_queche", // Fixed spelling to match actual asset name
                  type: .lunch, 
                  status: .available,
                  date: Date(), 
                  location: "Faculty Lounge",
                  nutritionInfo: NutritionInfo(calories: 380, protein: 15.0, carbs: 22.0, fat: 28.0, allergens: ["Gluten", "Dairy"], dietaryInfo: ["Vegetarian"])),
                  
-            // Another new meal with placeholder image
+            // Update to use correct quinoa_bowl asset
             Meal(id: "sample-available4", 
                  name: "Quinoa Bowl", 
                  description: "Protein-packed quinoa with roasted vegetables and tahini", 
-                 imageURL: "curry_rice", // Placeholder asset
+                 imageURL: "quinoa_bowl", 
                  type: .dinner, 
                  status: .available,
                  date: Date(), 
@@ -496,17 +496,31 @@ struct SwapView: View {
                  offeredBy: "3", 
                  offerExpiryTime: Date().addingTimeInterval(3300)),
                  
+            // Use quinoa_bowl for this meal
             Meal(id: "sample-offered5", 
-                 name: "Teriyaki Bowl", 
+                 name: "Quinoa Bowl", 
                  description: "Rice bowl with teriyaki sauce, vegetables, and your choice of protein", 
-                 imageURL: "curry_rice", 
+                 imageURL: "quinoa_bowl", 
                  type: .dinner, 
                  status: .offered,
                  date: Date(), 
                  location: "Asian Fusion Counter",
                  nutritionInfo: NutritionInfo(calories: 520, protein: 22.0, carbs: 65.0, fat: 12.0, allergens: ["Soy", "Gluten"], dietaryInfo: []),
                  offeredBy: "3", 
-                 offerExpiryTime: Date().addingTimeInterval(4500))
+                 offerExpiryTime: Date().addingTimeInterval(4500)),
+                 
+            // Add a spinach quiche to the offered meals with fixed spelling
+            Meal(id: "sample-offered6", 
+                 name: "Spinach Quiche", 
+                 description: "Savory spinach and cheese quiche with flaky crust", 
+                 imageURL: "spinach_queche", // Fixed spelling to match actual asset name
+                 type: .lunch, 
+                 status: .offered,
+                 date: Date(), 
+                 location: "Faculty Lounge",
+                 nutritionInfo: NutritionInfo(calories: 380, protein: 15.0, carbs: 22.0, fat: 28.0, allergens: ["Gluten", "Dairy"], dietaryInfo: ["Vegetarian"]),
+                 offeredBy: "2", 
+                 offerExpiryTime: Date().addingTimeInterval(2850))
         ]
         
         // Add these meals to the data controller
