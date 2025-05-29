@@ -84,16 +84,89 @@ class DataController: ObservableObject {
     func login(email: String, password: String) -> Bool {
         // In a real app, this would authenticate with a server
         // For now, just simulate login with sample data
-        if let user = loadUsers().first(where: { $0.email == email }) {
-            self.currentUser = user
+        if email == "admin@test.com" {
+            // Special case for admin login
+            let users = loadUsers()
+            if let adminUser = users.first(where: { $0.email == email && $0.role == .admin }) {
+                self.currentUser = adminUser
+                saveUserSession()
+                
+                // Post notification for user login
+                NotificationCenter.default.post(name: NSNotification.Name("UserLoggedIn"), object: nil)
+                
+                return true
+            }
+            
+            // If admin user doesn't exist in database, create one
+            let adminUser = User(
+                id: "admin1",
+                name: "Admin User",
+                email: "admin@test.com",
+                role: .admin,
+                cqScore: 0.0
+            )
+            
+            var updatedUsers = loadUsers()
+            if !updatedUsers.contains(where: { $0.email == email }) {
+                updatedUsers.append(adminUser)
+                saveUsers(updatedUsers)
+            }
+            
+            self.currentUser = adminUser
             saveUserSession()
             
             // Post notification for user login
             NotificationCenter.default.post(name: NSNotification.Name("UserLoggedIn"), object: nil)
             
             return true
+        } else if email == "staff@test.com" {
+            // Special case for cafeteria staff login
+            let users = loadUsers()
+            if let staffUser = users.first(where: { $0.email == email && $0.role == .cafeteriaStaff }) {
+                self.currentUser = staffUser
+                saveUserSession()
+                
+                // Post notification for user login
+                NotificationCenter.default.post(name: NSNotification.Name("UserLoggedIn"), object: nil)
+                
+                return true
+            }
+            
+            // If staff user doesn't exist in database, create one
+            let staffUser = User(
+                id: "staff1",
+                name: "Cafeteria Staff",
+                email: "staff@test.com",
+                role: .cafeteriaStaff,
+                cqScore: 0.0
+            )
+            
+            var updatedUsers = loadUsers()
+            if !updatedUsers.contains(where: { $0.email == email }) {
+                updatedUsers.append(staffUser)
+                saveUsers(updatedUsers)
+            }
+            
+            self.currentUser = staffUser
+            saveUserSession()
+            
+            // Post notification for user login
+            NotificationCenter.default.post(name: NSNotification.Name("UserLoggedIn"), object: nil)
+            
+            return true
+        } else {
+            // Regular user login
+            if let user = loadUsers().first(where: { $0.email == email }) {
+                self.currentUser = user
+                saveUserSession()
+                
+                // Post notification for user login
+                NotificationCenter.default.post(name: NSNotification.Name("UserLoggedIn"), object: nil)
+                
+                return true
+            }
+            return false
         }
-        return false
     }
     
     func logout() {
@@ -494,11 +567,12 @@ class DataController: ObservableObject {
     
     // MARK: - File Operations
     
-    private func loadUsers() -> [User] {
+    // Public methods for loading and saving users
+    func loadUsers() -> [User] {
         return loadFromFile(usersStorePath, defaultValue: [User]())
     }
     
-    private func saveUsers(_ users: [User]) {
+    func saveUsers(_ users: [User]) {
         saveToFile(users, filePath: usersStorePath)
     }
     

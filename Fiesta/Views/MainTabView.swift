@@ -37,8 +37,24 @@ struct MainTabView: View {
     private func updateUserRole() {
         // Update the user role based on the current user in dataController
         if let currentUser = dataController.currentUser {
+            // Check if role changed
+            let oldRole = self.userRole
             self.userRole = currentUser.role
-            print("User role set to: \(currentUser.role)")
+            
+            if oldRole != self.userRole {
+                print("User role changed from \(oldRole) to \(self.userRole)")
+            } else {
+                print("User role set to: \(currentUser.role)")
+            }
+            
+            // Debug the roles for troubleshooting
+            if currentUser.role == .admin {
+                print("✅ Admin role confirmed")
+            } else if currentUser.role == .cafeteriaStaff {
+                print("✅ Staff role confirmed")
+            } else {
+                print("✅ Student role confirmed")
+            }
         } else {
             self.userRole = .student
             print("No user found, defaulting to student role")

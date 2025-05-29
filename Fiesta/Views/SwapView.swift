@@ -198,14 +198,22 @@ struct SwapView: View {
                                     // Offer meal logic
                                     if dataController.offerMeal(meal) {
                                         offerSuccess = true
-                                        // Remove the current card immediately rather than waiting for handleSuccess
+                                        
+                                        // Remove the card and move to next one
                                         if currentIndex < meals.count {
                                             meals.remove(at: currentIndex)
-                                            // If no more meals, reload with sample data after overlay disappears
+                                            
+                                            // If no more meals, reload with sample data
                                             if meals.isEmpty {
-                                                DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) {
+                                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                                     createSampleAvailableMeals()
                                                     loadMeals()
+                                                }
+                                            } else {
+                                                // Reset animation state for next card
+                                                withAnimation(.spring()) {
+                                                    translation = .zero
+                                                    swipeStatus = nil
                                                 }
                                             }
                                         }
@@ -213,10 +221,23 @@ struct SwapView: View {
                                 } else {
                                     // Claim meal logic
                                     if dataController.claimMeal(meal) {
-                                        showingClaimSuccess = true
-                                        // Remove the current card immediately
+                                        // First remove the card from display
                                         if currentIndex < meals.count {
                                             meals.remove(at: currentIndex)
+                                            
+                                            // Reset for the next card if any
+                                            if !meals.isEmpty {
+                                                withAnimation(.spring()) {
+                                                    translation = .zero
+                                                    swipeStatus = nil
+                                                }
+                                            }
+                                        }
+                                        
+                                        // Then show the claim success view after the card is gone
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                                            showingClaimSuccess = true
+                                            
                                             // If no more meals, reload with sample data after claim view dismisses
                                             if meals.isEmpty {
                                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -271,9 +292,13 @@ struct SwapView: View {
             }
             loadMeals()
         }
-        .overlay(
-            offerSuccess ? OfferSuccessOverlay(isShowing: $offerSuccess) : nil
-        )
+        .alert("Meal Offered!", isPresented: $offerSuccess) {
+            Button("OK") {
+                // This will auto-dismiss the alert
+            }
+        } message: {
+            Text("Your meal has been offered successfully. Users nearby will now be able to claim it.")
+        }
     }
     
     // Card stacking effect helpers
@@ -343,27 +368,17 @@ struct SwapView: View {
                     ($0.offerExpiryTime == nil || $0.offerExpiryTime! > Date())
                 }
                 
-                // Force reload from data source if no meals are found 
-                // (in case the DataController cached values need refreshing)
-                if meals.isEmpty {
-                    dataController.refreshData()
-                    meals = dataController.availableMeals.filter {
-                        $0.status == .offered && 
-                        $0.offeredBy != dataController.currentUser?.id && 
-                        ($0.offerExpiryTime == nil || $0.offerExpiryTime! > Date())
-                    }
-                    
-                    // If still empty after refresh, create sample meals to claim
-                    if meals.isEmpty {
-                        print("No claimable meals found after data refresh")
-                        createSampleOfferedMeals()
-                        meals = dataController.availableMeals.filter {
-                            $0.status == .offered && 
-                            $0.offeredBy != dataController.currentUser?.id && 
-                            ($0.offerExpiryTime == nil || $0.offerExpiryTime! > Date())
-                        }
-                    }
+                // Always create sample offered meals for the claim view to ensure it's not empty
+                self.createSampleOfferedMeals()
+                
+                // Reload after creating samples
+                meals = dataController.availableMeals.filter {
+                    $0.status == .offered && 
+                    $0.offeredBy != dataController.currentUser?.id && 
+                    ($0.offerExpiryTime == nil || $0.offerExpiryTime! > Date())
                 }
+                
+                print("Loaded \(meals.count) meals for claiming")
             }
             
             print("Loaded \(meals.count) meals for \(swipeAction == .offer ? "offering" : "claiming")")
@@ -430,9 +445,6 @@ struct SwapView: View {
     
     // For demo purposes only - creates sample meals that can be claimed
     private func createSampleOfferedMeals() {
-        // Only create sample meals if we're in claim mode
-        guard swipeAction == .claim else { return }
-        
         // Sample offered meals - always create these for demo purposes
         let sampleOfferedMeals: [Meal] = [
             Meal(id: "sample-offered1", 
@@ -469,7 +481,32 @@ struct SwapView: View {
                  location: "Snack Corner",
                  nutritionInfo: NutritionInfo(calories: 250, protein: 10.0, carbs: 40.0, fat: 6.0, allergens: ["Dairy", "Nuts"], dietaryInfo: ["Vegetarian"]),
                  offeredBy: "2", // Offered by someone else
-                 offerExpiryTime: Date().addingTimeInterval(1800)) // 30 minutes from now
+                 offerExpiryTime: Date().addingTimeInterval(1800)), // 30 minutes from now
+                 
+            // Adding more meals for claiming
+            Meal(id: "sample-offered4", 
+                 name: "Margherita Pizza", 
+                 description: "Classic pizza with tomato sauce, fresh mozzarella, and basil", 
+                 imageURL: "pasta", // Using pasta as placeholder
+                 type: .lunch, 
+                 status: .offered,
+                 date: Date(), 
+                 location: "Pizza Station",
+                 nutritionInfo: NutritionInfo(calories: 450, protein: 18.0, carbs: 55.0, fat: 15.0, allergens: ["Gluten", "Dairy"], dietaryInfo: ["Vegetarian"]),
+                 offeredBy: "3", 
+                 offerExpiryTime: Date().addingTimeInterval(3300)),
+                 
+            Meal(id: "sample-offered5", 
+                 name: "Teriyaki Bowl", 
+                 description: "Rice bowl with teriyaki sauce, vegetables, and your choice of protein", 
+                 imageURL: "curry_rice", 
+                 type: .dinner, 
+                 status: .offered,
+                 date: Date(), 
+                 location: "Asian Fusion Counter",
+                 nutritionInfo: NutritionInfo(calories: 520, protein: 22.0, carbs: 65.0, fat: 12.0, allergens: ["Soy", "Gluten"], dietaryInfo: []),
+                 offeredBy: "3", 
+                 offerExpiryTime: Date().addingTimeInterval(4500))
         ]
         
         // Add these meals to the data controller
@@ -522,9 +559,36 @@ struct SwapView: View {
     }
     
     private func handleReject(_ meal: Meal) {
-        // For rejections, we still want to go to the next card without removing any
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            nextCard()
+        // Animate card off screen first
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+            translation = CGSize(width: -UIScreen.main.bounds.width, height: 0)
+        }
+        
+        // After animation completes, remove the card and reset for next one
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            if currentIndex < meals.count {
+                // Move to next card instead of removing current one
+                currentIndex += 1
+                
+                // If we've gone through all cards, reset the meals
+                if currentIndex >= meals.count {
+                    // Reset the meals list after a short delay
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        if swipeAction == .offer {
+                            self.createSampleAvailableMeals()
+                        } else {
+                            self.createSampleOfferedMeals()
+                        }
+                        self.loadMeals()
+                    }
+                } else {
+                    // Reset translation for the next card
+                    withAnimation(.spring()) {
+                        translation = .zero
+                        swipeStatus = nil
+                    }
+                }
+            }
         }
     }
     
@@ -555,84 +619,6 @@ struct SwapView: View {
                     self.createSampleOfferedMeals()
                 }
                 self.loadMeals()
-            }
-        }
-    }
-}
-
-struct OfferSuccessOverlay: View {
-    @Binding var isShowing: Bool
-    
-    var body: some View {
-        ZStack {
-            // Dark semi-transparent background
-            Color.black.opacity(0.6)
-                .edgesIgnoringSafeArea(.all)
-            
-            // Success card
-            VStack(spacing: 24) {
-                // Success icon
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 70))
-                    .foregroundColor(.green)
-                    .padding(.top, 10)
-                
-                // Title with high contrast
-                Text("Meal Offered!")
-                    .font(.system(size: 28, weight: .bold))
-                    .foregroundColor(.black)
-                
-                // Message with high contrast
-                Text("Your meal has been offered successfully")
-                    .font(.headline)
-                    .foregroundColor(.black)
-                    .multilineTextAlignment(.center)
-                
-                Divider()
-                    .padding(.horizontal, 30)
-                
-                // Information text
-                Text("Users nearby will now be able to claim it")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-                
-                // Action button
-                Button(action: {
-                    withAnimation(.spring()) {
-                        isShowing = false
-                    }
-                }) {
-                    Text("OK")
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white)
-                        .frame(width: 120)
-                        .padding(.vertical, 14)
-                        .background(Color("FiestaPrimary"))
-                        .cornerRadius(12)
-                }
-                .padding(.top, 10)
-                .padding(.bottom, 5)
-            }
-            .padding(30)
-            .background(Color.white)
-            .cornerRadius(20)
-            .shadow(color: Color.black.opacity(0.2), radius: 15, x: 0, y: 5)
-            .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-            )
-            .padding(.horizontal, 30)
-        }
-        .transition(.opacity)
-        .onAppear {
-            // Auto-dismiss after 2.5 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-                withAnimation(.easeOut(duration: 0.3)) {
-                    isShowing = false
-                }
             }
         }
     }
